@@ -57,15 +57,17 @@ class AdbKeyStore(context: Context) {
     private fun parsePublicKeyFile(text: String): RSAPublicKey {
         val b64 = text.trim().split(" ")[0]
         val bytes = Base64.getDecoder().decode(b64)
+        require(bytes.size == 524) { "pubkey must be 524 bytes" }  // 先校验长度
         val bb = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-        bb.int // word count
+        bb.int // word count（=64）
         bb.int // n0inv
         val m = ByteArray(256)
         bb.get(m)
         val rr = ByteArray(256)
         bb.get(rr) // R^2 mod N, not needed for JDK RSA
         val e = bb.int
-        val modulus = java.math.BigInteger(1, m)
+        // m 是 LE 序，反转后构造 BigInteger（BE）
+        val modulus = java.math.BigInteger(1, m.reversedArray())
         val exponent = java.math.BigInteger.valueOf(e.toLong() and 0xffffffffL)
         return KeyFactory.getInstance("RSA")
             .generatePublic(RSAPublicKeySpec(modulus, exponent)) as RSAPublicKey

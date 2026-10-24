@@ -20,7 +20,7 @@ import java.util.Base64
  *
  * 实测 adb 34.x 的 ANDROID_pubkey 格式（524 字节，与老版 268 字节不同）：
  *   uint32 len      = 64 (LE, word 数)
- *   uint32 n0inv    = -1/n0 mod 2^32 (LE, n0 = 模数最高 32 位)
+ *   uint32 n0inv    = -1/n0 mod 2^32 (LE, n0 = 模数最低 32 位，即 n mod 2^32)
  *   byte[256] modulus  (2048-bit RSA)
  *   byte[256] rr      = R^2 mod N, R = 2^2048
  *   uint32 exponent = 65537 (LE)
@@ -37,17 +37,22 @@ object AdbKey {
     fun encodePublic(pub: RSAPublicKey, name: String): String {
         val n = pub.modulus
         val modulus = bigToBytes(n, 256)
-        val n0 = BigInteger(1, modulus.copyOfRange(0, 4))  // 模数高 32 位（BE 读出）
+        // LE 序的 256 字节 modulus（wire 格式）
+        val modulusLe = modulus.reversedArray()
+        // n0 = 模数最低 32 位（n mod 2^32，Montgomery 常数由最低 word 决定）
+        val n0 = n.mod(BigInteger.TWO.pow(32))
         // n0inv = -1/n0 mod 2^32
         val n0inv = n0.modInverse(BigInteger.TWO.pow(32)).negate().mod(BigInteger.TWO.pow(32))
         // rr = R^2 mod N, R = 2^2048
         val rr = BigInteger.TWO.pow(2048).modPow(BigInteger.TWO, n)
-        val rrBytes = bigToBytes(rr, 256)
+        // rr 同样按 LE 写入 wire
+        val rrBytes = bigToBytes(rr, 256).reversedArray()
 
         val buf = ByteBuffer.allocate(524).order(ByteOrder.LITTLE_ENDIAN)
         buf.putInt(64)
         buf.putInt(n0inv.toInt())
-        buf.put(modulus)
+        // modulus/rr 用 LE 序写入
+        buf.put(modulusLe)
         buf.put(rrBytes)
         buf.putInt(pub.publicExponent.toInt())
         require(!buf.hasRemaining())
