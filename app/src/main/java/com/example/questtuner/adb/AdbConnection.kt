@@ -7,6 +7,9 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.withLock
 
 /**
  * One TCP connection to adbd (127.0.0.1:5555 from inside the headset).
@@ -16,10 +19,13 @@ class AdbConnection(
     private val host: String,
     private val port: Int = 5555,
     private val connectTimeoutMs: Int = 5000,
+    private val readTimeoutMs: Int = 30_000,
 ) {
     private var socket: Socket? = null
     private var input: DataInputStream? = null
     private var output: DataOutputStream? = null
+    private val shellMutex = ReentrantLock()
+    private val nextLocalId = AtomicInteger(1)
 
     /** CNXN handshake; returns device info string on success. */
     fun connect(keyStore: AdbKeyStore): Result<String> {
@@ -27,6 +33,8 @@ class AdbConnection(
             val sock = Socket()
             sock.tcpNoDelay = true
             sock.connect(InetSocketAddress(host, port), connectTimeoutMs)
+            // 读超时：adbd 等待用户在头显上确认授权期间不回包，无 soTimeout 会永久阻塞
+            sock.soTimeout = readTimeoutMs
             socket = sock
             input = DataInputStream(sock.getInputStream().buffered())
             output = DataOutputStream(sock.getOutputStream().buffered())
@@ -64,27 +72,31 @@ class AdbConnection(
 
     /** Blocking shell; collect output until CLSE. Call from background thread. */
     fun shell(command: String): Result<String> = runCatching {
-        val sb = StringBuilder()
-        shellStreaming(command) { chunk -> sb.append(String(chunk, Charsets.UTF_8)) }
-        sb.toString()
+        // 字节累积 + 一次性 UTF-8 解码，避免多字节字符跨 WRTE 包截断
+        val bytes = java.io.ByteArrayOutputStream()
+        shellStreaming(command) { chunk -> bytes.write(chunk) }
+        bytes.toString("UTF-8")
     }
 
     fun shellStreaming(command: String, onChunk: (ByteArray) -> Unit) {
-        val localId = 1
-        sendPacket(AdbProtocol.CMD_OPEN, localId, 0, "shell:$command:".toByteArray(Charsets.UTF_8))
-        val first = readPacket()
-        if (first.cmd != AdbProtocol.CMD_OKAY) {
-            throw IOException("OPEN not acked: ${AdbProtocol.cmdName(first.cmd)}")
-        }
-        while (true) {
-            val p = readPacket()
-            when (p.cmd) {
-                AdbProtocol.CMD_WRTE -> {
-                    if (p.payload.isNotEmpty()) onChunk(p.payload)
-                    sendPacket(AdbProtocol.CMD_OKAY, localId, p.arg0)
+        // 串行化整个 shell 会话：单连接复用，并发 OPEN 会流 ID 错配、输出串包
+        shellMutex.withLock {
+            val localId = nextLocalId.getAndIncrement()
+            sendPacket(AdbProtocol.CMD_OPEN, localId, 0, "shell:$command\u0000".toByteArray(Charsets.UTF_8))
+            val first = readPacket()
+            if (first.cmd != AdbProtocol.CMD_OKAY) {
+                throw IOException("OPEN not acked: ${AdbProtocol.cmdName(first.cmd)}")
+            }
+            while (true) {
+                val p = readPacket()
+                when (p.cmd) {
+                    AdbProtocol.CMD_WRTE -> {
+                        if (p.payload.isNotEmpty()) onChunk(p.payload)
+                        sendPacket(AdbProtocol.CMD_OKAY, localId, p.arg0)
+                    }
+                    AdbProtocol.CMD_CLSE -> return@withLock
+                    else -> { /* ignore */ }
                 }
-                AdbProtocol.CMD_CLSE -> return
-                else -> { /* ignore */ }
             }
         }
     }

@@ -24,7 +24,7 @@ object AdbProtocol {
     const val AUTH_SIGNATURE = 2
     const val AUTH_RSAPUBLICKEY = 3
 
-    data class Packet(val cmd: Int, val arg0: Int, val arg1: Int, val payload: ByteArray)
+    data class Packet(val cmd: Int, val arg0: Int, val arg1: Int, val payload: ByteArray, val crc: Int = 0)
 
     fun encode(cmd: Int, arg0: Int, arg1: Int, payload: ByteArray): ByteArray {
         val buf = ByteBuffer.allocate(24 + payload.size).order(ByteOrder.LITTLE_ENDIAN)
@@ -49,12 +49,10 @@ object AdbProtocol {
         val magic = bb.int
         require(len in 0..(1 shl 20)) { "bad payload length $len" }
         require(magic == cmd.xor(-1)) { "magic mismatch" }
-        return Packet(cmd, a0, a1, ByteArray(len).also { /* crc filled by caller */ })
+        return Packet(cmd, a0, a1, ByteArray(len).also { /* crc filled by caller */ }, crc)
     }
 
-    fun verifyCrc(p: Packet, payload: ByteArray): Boolean = crc32(payload) == crcOf(p)
-
-    private fun crcOf(p: Packet): Int = 0 // not used; see decodeFull
+    fun verifyCrc(p: Packet, payload: ByteArray = p.payload): Boolean = crc32(payload) == p.crc
 
     fun decodeFull(header: ByteArray, payload: ByteArray): Packet {
         val bb = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
