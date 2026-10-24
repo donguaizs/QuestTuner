@@ -20,6 +20,8 @@ class AdbConnection(
     private var socket: Socket? = null
     private var input: DataInputStream? = null
     private var output: DataOutputStream? = null
+    private val shellMutex = java.util.concurrent.locks.ReentrantLock()
+    private val nextLocalId = java.util.concurrent.atomic.AtomicInteger(1)
 
     /** CNXN handshake; returns device info string on success. */
     fun connect(keyStore: AdbKeyStore): Result<String> {
@@ -71,21 +73,24 @@ class AdbConnection(
     }
 
     fun shellStreaming(command: String, onChunk: (ByteArray) -> Unit) {
-        val localId = 1
-        sendPacket(AdbProtocol.CMD_OPEN, localId, 0, "shell:$command\u0000".toByteArray(Charsets.UTF_8))
-        val first = readPacket()
-        if (first.cmd != AdbProtocol.CMD_OKAY) {
-            throw IOException("OPEN not acked: ${AdbProtocol.cmdName(first.cmd)}")
-        }
-        while (true) {
-            val p = readPacket()
-            when (p.cmd) {
-                AdbProtocol.CMD_WRTE -> {
-                    if (p.payload.isNotEmpty()) onChunk(p.payload)
-                    sendPacket(AdbProtocol.CMD_OKAY, localId, p.arg0)
+        // 串行化整个 shell 会话：单连接复用，并发 OPEN 会流 ID 错配、输出串包
+        shellMutex.withLock {
+            val localId = nextLocalId.getAndIncrement()
+            sendPacket(AdbProtocol.CMD_OPEN, localId, 0, "shell:$command\u0000".toByteArray(Charsets.UTF_8))
+            val first = readPacket()
+            if (first.cmd != AdbProtocol.CMD_OKAY) {
+                throw IOException("OPEN not acked: ${AdbProtocol.cmdName(first.cmd)}")
+            }
+            while (true) {
+                val p = readPacket()
+                when (p.cmd) {
+                    AdbProtocol.CMD_WRTE -> {
+                        if (p.payload.isNotEmpty()) onChunk(p.payload)
+                        sendPacket(AdbProtocol.CMD_OKAY, localId, p.arg0)
+                    }
+                    AdbProtocol.CMD_CLSE -> return
+                    else -> { /* ignore */ }
                 }
-                AdbProtocol.CMD_CLSE -> return
-                else -> { /* ignore */ }
             }
         }
     }
