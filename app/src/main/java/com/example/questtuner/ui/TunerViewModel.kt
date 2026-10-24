@@ -61,6 +61,13 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshStatus() {
         viewModelScope.launch {
             val out = TuningExecutor.runCommand(TuningCommands.statusCommand())
+            if (out == null) {
+                // 读取失败且连接已被清理 → 复位连接状态，允许重连
+                _state.value = _state.value.copy(
+                    connected = false,
+                    adbStatus = "连接已断开: ${TuningExecutor.lastError ?: "读取失败"}",
+                )
+            }
             _state.value = _state.value.copy(currentStatus = out ?: "读取失败")
         }
     }
@@ -82,8 +89,15 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             sb.append("应用 ${p.label ?: p.packageName} ")
             sb.append(if (ok) "完成\n" else "失败\n")
             cmds.forEach { sb.append("  $it\n") }
+            // 失败时呈现实际命令输出/错误
             if (!ok) sb.append("错误: ${TuningExecutor.lastError}\n")
             _state.value = _state.value.copy(lastCommandOutput = sb.toString())
+            if (!ok) {
+                _state.value = _state.value.copy(
+                    connected = false,
+                    adbStatus = "连接已断开: ${TuningExecutor.lastError ?: "命令失败"}",
+                )
+            }
             refreshStatus()
         }
     }
@@ -108,6 +122,12 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(
                 lastCommandOutput = if (ok) "已恢复默认" else "失败: ${TuningExecutor.lastError}"
             )
+            if (!ok) {
+                _state.value = _state.value.copy(
+                    connected = false,
+                    adbStatus = "连接已断开: ${TuningExecutor.lastError ?: "命令失败"}",
+                )
+            }
             refreshStatus()
         }
     }
