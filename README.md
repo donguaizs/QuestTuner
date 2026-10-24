@@ -1,59 +1,87 @@
-# QuestTuner — Quest 3 参数调节工具
+# QuestTuner
 
-类似 QGO / Quest助手 的头显端调参应用。APK 直接安装在 Quest 3 头显内部，通过
-**本机 ADB（127.0.0.1:5555）** 执行 `setprop` 调节系统参数，无需 root、无需电脑常驻。
+**English** | [简体中文](README.zh-CN.md)
 
-## 功能
+On-device parameter tuning tool for **Meta Quest 3** — a QGO / Quest Assistant style app. The APK runs on the headset itself and talks to the local ADB daemon (`127.0.0.1:5555`) through a **pure-Kotlin ADB client** to run `setprop` commands. **No root, no PC required** after installation.
 
-| 功能 | 系统属性 | 说明 |
+## Features
+
+| Feature | System property | Notes |
 |---|---|---|
-| 刷新率 72/90/120Hz | `debug.oculus.refreshRate` | 全局或按应用 |
-| 渲染纹理分辨率 | `debug.oculus.textureWidth/Height` | 0.5x–2.0x 缩放 |
-| CPU/GPU 性能等级 0–4 | `debug.oculus.cpuLevel / gpuLevel` | 省电 ↔ 性能 |
-| 按应用 Profile | — | JSON 存储，一键应用/删除 |
-| 恢复默认 | — | 清空全部调参属性 |
+| Refresh rate 72 / 90 / 120 Hz | `debug.oculus.refreshRate` | Global |
+| Render texture resolution | `debug.oculus.textureWidth / textureHeight` | 0.5x–2.0x scale |
+| CPU / GPU performance level 0–4 | `debug.oculus.cpuLevel / gpuLevel` | Power save ↔ Performance |
+| Passthrough precision | `debug.oculus.highPrecisionPassthrough` | 0 / 1 |
+| Per-app profiles | — | JSON storage, one-tap apply / delete |
+| Reset to default | — | Clears all tuning properties |
 
-## 构建方法（本机 Windows）
+## How It Works
 
-工具链已下载到工作区，无需安装 Android Studio：
+The app embeds a from-scratch ADB client implementation (no external libraries):
 
-```powershell
-$env:JAVA_HOME = "F:\workspace\toolchain\jdk-extract\jdk-17.0.20.1+1"
-$env:GRADLE_USER_HOME = "F:\workspace\toolchain\gradle-home"
-F:\workspace\toolchain\gradle-extract\gradle-8.7\bin\gradle.bat `
-  -p F:\workspace\QuestTuner :app:assembleDebug
+```
+adb/    CNXN/AUTH handshake, RSA-2048 key management, android_pubkey encoding
+        (524-byte wire format, little-endian), shell v2 streams, packet CRC
+tuner/  setprop command mapping, profile repository (atomic JSON writes),
+        installed-app scanning (VR intent-filter detection)
+ui/     Jetpack Compose UI + ViewModel (MVVM)
 ```
 
-产物：`app\build\outputs\apk\debug\app-debug.apk`
+Everything happens on the headset: the app connects to `adbd` on `127.0.0.1:5555` as a regular ADB client, authorizes with its own generated RSA key (the familiar "Allow USB debugging?" dialog appears once), then executes `setprop` as the `shell` user, which has write access to `debug.*` properties.
 
-## 安装到 Quest 3
+## Build
 
-1. 头显：设置 → 系统 → 开发者选项 → 打开 **USB / 无线调试**（需先在手机 App 配对过头显或已开启开发者模式）
-2. PC 用 USB 连接 Quest 3：
-   ```powershell
-   & "F:\Program Files\Android\Android_SDK\platform-tools\adb.exe" devices
-   & "F:\Program Files\Android\Android_SDK\platform-tools\adb.exe" install -r app-debug.apk
+Requirements: **JDK 17**, **Android SDK** (compileSdk 34), **Gradle 8.7+**.
+
+```bash
+gradle :app:assembleDebug
+# Output: app/build/outputs/apk/debug/app-debug.apk
+```
+
+## Install on Quest 3
+
+1. Headset: **Settings → System → Developer options → enable USB / wireless debugging** (developer mode must be activated first)
+2. From a PC via USB:
+   ```bash
+   adb devices
+   adb install -r app-debug.apk
    ```
-3. 头显内戴上头显 → 应用库 → 右上角筛选「未知来源」→ 打开 **QuestTuner**
-4. 首次点击「连接」时，头显里会弹出「是否允许调试」对话框 → 勾选“始终允许” → 允许
-5. 之后所有调节无需电脑
+3. In the headset: **App Library → filter "Unknown Sources" → QuestTuner**
+4. On first tap of **Connect**, the headset shows the *"Allow USB debugging?"* dialog → check **Always allow** → **Allow**
+5. After that, everything runs on-device — no PC needed
 
-## 重要说明
+## Important Notes
 
-- **刷新率属性在部分固件版本（v74+）可能被 Meta 收紧**，若不生效请反馈固件版本。
-- 调节刷新率后建议用「刷新状态」验证 `debug.oculus.refreshRate` 实际值。
-- textureWidth/Height 数值参考 Quest 3 默认每眼 1680×1760，上限 3072×3208。
-- 本应用不修改系统分区、不持久化任何系统属性（`setprop` 重启失效），可随时用「恢复默认」或重启头显还原。
+- The `refreshRate` property appears to be **restricted on recent firmware (v74+)**. If it has no effect, please report your firmware version.
+- After changing the refresh rate, use **Refresh status** to verify the actual value of `debug.oculus.refreshRate`.
+- `textureWidth / textureHeight` reference values: Quest 3 default is 1680×1760 per eye, upper bound 3072×3208.
+- **Nothing is persistent**: `setprop` values are lost on reboot, and **Reset to default** (or a reboot) restores stock behavior at any time.
+- The app does not modify system partitions.
 
-## 项目结构
+## Project Structure
 
 ```
 QuestTuner/
 ├── app/src/main/java/com/example/questtuner/
-│   ├── adb/          # 纯 Kotlin 实现的 ADB 客户端协议（CNXN/AUTH/shell）
-│   ├── tuner/        # 调参指令映射、Profile 存储、应用扫描
+│   ├── adb/          # Pure-Kotlin ADB client protocol (CNXN/AUTH/shell)
+│   ├── tuner/        # Tuning command mapping, profile storage, app scanning
 │   ├── ui/           # Jetpack Compose UI + ViewModel
 │   └── MainActivity.kt
-├── local.properties  # SDK 路径
-└── build.gradle.kts  # AGP 8.5.2 + Kotlin 2.0 + Compose BOM 2024.06
+└── docs/             # QA reports: bug report / fix plan / verification
 ```
+
+## Quality
+
+The codebase went through a full agent-team QA cycle (see [docs/](docs/)): **18 defects found (1×P0, 9×P1, 8×P2), 17 fixed** — including a P0 in the ADB public-key encoding that broke authorization on unpaired devices — all fixes verified by diff review plus a clean build (17/17 PASS). Details:
+
+- [Bug report (round 1)](docs/bugs/BUG-REPORT-round1.md)
+- [Fix plan (round 1)](docs/plans/PLAN-round1.md)
+- [Verification (round 1)](docs/verification/VERIFY-round1.md)
+
+## Disclaimer
+
+This project is for tuning your own personal device. All changes are session-only and fully reversible. Not affiliated with Meta. Use at your own risk.
+
+---
+
+QuestTuner v0.1.0 · Kotlin 2.0 · Jetpack Compose (BOM 2024.06) · minSdk 32 (Quest 3 / Android 12L)
