@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -20,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.example.questtuner.tuner.OvrMetrics
@@ -63,8 +65,10 @@ fun AutomationCard(state: UiState, viewModel: TunerViewModel) {
             ) { viewModel.setAutoA11y(it) }
             SwitchRow(
                 "按前台应用自动应用 Profile",
-                "仅本地监听窗口切换，不上传任何数据；需已连接——断开后自动应用暂停，重新连接后恢复",
-                state.autoApply, state.autoA11y || grant,
+                // R4-O4：副文案按实态区分，消除静默失效
+                if (state.a11yRunning) "仅本地监听窗口切换，不上传任何数据；需已连接——断开后自动应用暂停，重新连接后恢复"
+                else "无障碍服务未运行，自动应用不会触发——请先开启上方「自动启用无障碍服务」",
+                state.autoApply, state.a11yRunning,   // BUG-030：门禁 = 真实依赖（服务运行）
             ) { viewModel.setAutoApply(it) }
             SwitchRow(
                 "开机恢复默认参数",
@@ -87,7 +91,9 @@ private fun SwitchRow(
     onChange: (Boolean) -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth(),
+        Modifier.fillMaxWidth()
+            // BUG-033：整行可点 + Switch 语义——TalkBack 聚焦读出「标题、副文案、开关、状态」，触达面积更大
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -95,7 +101,8 @@ private fun SwitchRow(
             Text(title, style = MaterialTheme.typography.bodyMedium)
             Text(note, style = MaterialTheme.typography.bodySmall)
         }
-        Switch(checked = checked, onCheckedChange = if (enabled) onChange else null)
+        // onCheckedChange=null：点击语义由整行承载，避免 TalkBack 双重播报
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 

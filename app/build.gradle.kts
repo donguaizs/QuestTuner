@@ -14,6 +14,8 @@ android {
         targetSdk = 32     // 保持 32：避免较新 Android 的后台执行限制
         versionCode = 2
         versionName = "0.2.0"
+        // BUG-033（lead 决策）：中文单语产品 + 依赖库资源裁剪（保留 zh 与库默认 en，剥离其余 locale）
+        resourceConfigurations.addAll(listOf("zh", "en"))
     }
 
     buildTypes {

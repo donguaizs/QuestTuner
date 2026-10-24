@@ -47,6 +47,7 @@ object SecureAutomation {
             Settings.Global.putInt(cr, "adb_wifi_enabled", 1)
             if (Settings.Global.getInt(cr, "adb_wifi_enabled", 0) == 1) {
                 wifiAdbEnabledByUs = true
+                TunerPrefs.get(context).wifiAdbByUs = true    // BUG-032：持久归属声明
                 CapProbe.Ok
             } else {
                 CapProbe.WriteRejected
@@ -60,8 +61,12 @@ object SecureAutomation {
             val cr = context.contentResolver
             Settings.Global.putInt(cr, "adb_wifi_enabled", 0)
             wifiAdbEnabledByUs = false
-            if (Settings.Global.getInt(cr, "adb_wifi_enabled", -1) == 0) CapProbe.Ok
-            else CapProbe.WriteRejected
+            if (Settings.Global.getInt(cr, "adb_wifi_enabled", -1) == 0) {
+                TunerPrefs.get(context).wifiAdbByUs = false   // BUG-032：回滚确认成功才清标记
+                CapProbe.Ok
+            } else {
+                CapProbe.WriteRejected                        // 回读仍 1 → 标记保留，下次重试
+            }
         }.getOrElse { CapProbe.Error(it.message) }
     }
 
@@ -70,6 +75,19 @@ object SecureAutomation {
         if (wifiAdbEnabledByUs) {
             disableWifiAdb(context)
             wifiAdbEnabledByUs = false
+        }
+    }
+
+    /**
+     * BUG-032 启动对账：上次会话「由我们开启的无线调试」可能因进程被杀未回滚。
+     * 保守方向：仅当持久标记为我们所置时回滚；本会话已开启（内存标记 true，
+     * 正常生命周期管理中）则跳过。disable 失败标记保留，下次启动重试。
+     */
+    fun reconcileWifiAdbOnStartup(context: Context) {
+        if (wifiAdbEnabledByUs) return   // 本会话已开（connect 流程先于对账跑完的竞态）——disconnect 负责
+        val prefs = TunerPrefs.get(context)
+        if (prefs.wifiAdbByUs) {
+            disableWifiAdb(context)      // 成功则内部已清持久标记；失败则保留待重试
         }
     }
 

@@ -51,9 +51,10 @@ data class UiState(
 class TunerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ProfileRepository.of(app.filesDir)
-    private val _state = MutableStateFlow(UiState())
-    val state: StateFlow<UiState> = _state
     private val prefs = TunerPrefs.get(app)
+    // R4-O3：wizardVisible 构造时同步读 prefs（SP 首读开销可忽略），消除「主界面闪现再弹向导」
+    private val _state = MutableStateFlow(UiState(wizardVisible = !prefs.firstRunDone))
+    val state: StateFlow<UiState> = _state
     private var pendingRelease: SelfUpdater.ReleaseInfo? = null
     /** BUG-026：connecting 态的连接协程，支持取消 */
     private var connectJob: kotlinx.coroutines.Job? = null
@@ -63,18 +64,19 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             val ps = withContext(Dispatchers.IO) { repo.profiles() }
             _state.value = _state.value.copy(
                 profiles = ps,
-                hasSecureGrant = SecureAutomation.hasWriteSecureSettings(app),
                 autoWifiAdb = prefs.autoWifiAdb,
                 autoA11y = prefs.autoA11y,
                 autoApply = prefs.autoApplyProfile,
                 restoreOnBoot = prefs.restoreOnBoot,
-                a11yRunning = SecureAutomation.isA11yRunning(app),
-                wizardVisible = !prefs.firstRunDone,
                 metricsOverlay = prefs.metricsOverlay,
                 metricsGraph = prefs.metricsGraph,
                 metricsStat = prefs.metricsStat,
-                privateDnsMode = PrivateDns.currentMode(app),
             )
+        }
+        refreshCapabilities()   // BUG-029：取代原 init 一次性能力快照
+        viewModelScope.launch(Dispatchers.IO) {
+            // BUG-032：启动对账——上次会话残留的「我们开的无线调试」回滚（保守：只回滚自己标记的）
+            SecureAutomation.reconcileWifiAdbOnStartup(getApplication())
         }
         viewModelScope.launch {
             SelfUpdater.installResult.collect { r ->
@@ -100,6 +102,29 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * BUG-029：能力快照重探测（onStart / 向导步骤切换 / init 三处触发）。
+     * BUG-030 对账：autoA11y 开关 ON 且已授权但服务未运行 → 自动补执行 enable（一次，结果如实回填）。
+     */
+    fun refreshCapabilities() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val grant = SecureAutomation.hasWriteSecureSettings(app)
+            var running = SecureAutomation.isA11yRunning(app)
+            // BUG-030 对账：持久 ON + 授权在 + 服务未运行 → 补启用（对照 autoWifiAdb 每次 connect 活读的自然对账）
+            if (grant && prefs.autoA11y && !running) {
+                if (SecureAutomation.enableA11yService(app) is SecureAutomation.CapProbe.Ok) {
+                    running = SecureAutomation.waitA11yRunning(app)
+                }
+            }
+            _state.value = _state.value.copy(
+                hasSecureGrant = grant,
+                a11yRunning = running,
+                privateDnsMode = PrivateDns.currentMode(app),
+            )
         }
     }
 
@@ -141,6 +166,12 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             connecting = false,
             adbStatus = "已取消连接（可重新点连接）",
         )
+        // R4-O2 收尾兜底：取消后即使阻塞读晚到完成连接，也被关闭且会话不激活
+        //（否则出现「连接活但 sessionActive=false」中间态，服务还会自愈重连违背取消意图）
+        viewModelScope.launch(Dispatchers.IO) {
+            TuningExecutor.markSessionInactive()
+            TuningExecutor.disconnect()
+        }
     }
 
     fun disconnect() {
@@ -402,6 +433,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             _state.value = _state.value.copy(updateStatus = "下载中…", updateProgress = 0)
+            // R4-O1：清理跨版本残留的陈旧 APK
+            SelfUpdater.cleanStaleApks(ctx, info.tag)
             val apk = SelfUpdater.updateApk(ctx, info.tag)
             SelfUpdater.download(info.url, info.size, apk) { p ->
                 _state.value = _state.value.copy(updateProgress = p)
