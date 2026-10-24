@@ -30,8 +30,9 @@ object SelfUpdater {
     /** tag 安全字符集（BUG-022）：git tag 允许含 '/'，可构造路径穿越；仅放行安全字符集 */
     private val TAG_SAFE = Regex("^[A-Za-z0-9._-]+$")
 
-    /** 纯函数（可单测）：tag 是否在安全字符集内 */
-    fun isTagSafe(tag: String): Boolean = TAG_SAFE.matches(tag)
+    /** 纯函数（可单测）：tag 是否在安全字符集内（额外拒绝裸 ".."/"."——防御性黑名单） */
+    fun isTagSafe(tag: String): Boolean =
+        TAG_SAFE.matches(tag) && tag != "." && tag != ".."
 
     /** host 白名单纯函数（可单测） */
     fun checkHost(url: String): Boolean =
