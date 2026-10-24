@@ -71,7 +71,7 @@ class AdbConnection(
 
     fun shellStreaming(command: String, onChunk: (ByteArray) -> Unit) {
         val localId = 1
-        sendPacket(AdbProtocol.CMD_OPEN, localId, 0, "shell:$command:".toByteArray(Charsets.UTF_8))
+        sendPacket(AdbProtocol.CMD_OPEN, localId, 0, "shell:$command\u0000".toByteArray(Charsets.UTF_8))
         val first = readPacket()
         if (first.cmd != AdbProtocol.CMD_OKAY) {
             throw IOException("OPEN not acked: ${AdbProtocol.cmdName(first.cmd)}")
