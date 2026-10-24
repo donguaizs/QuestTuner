@@ -7,6 +7,9 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.withLock
 
 /**
  * One TCP connection to adbd (127.0.0.1:5555 from inside the headset).
@@ -21,8 +24,8 @@ class AdbConnection(
     private var socket: Socket? = null
     private var input: DataInputStream? = null
     private var output: DataOutputStream? = null
-    private val shellMutex = java.util.concurrent.locks.ReentrantLock()
-    private val nextLocalId = java.util.concurrent.atomic.AtomicInteger(1)
+    private val shellMutex = ReentrantLock()
+    private val nextLocalId = AtomicInteger(1)
 
     /** CNXN handshake; returns device info string on success. */
     fun connect(keyStore: AdbKeyStore): Result<String> {
@@ -91,7 +94,7 @@ class AdbConnection(
                         if (p.payload.isNotEmpty()) onChunk(p.payload)
                         sendPacket(AdbProtocol.CMD_OKAY, localId, p.arg0)
                     }
-                    AdbProtocol.CMD_CLSE -> return
+                    AdbProtocol.CMD_CLSE -> return@withLock
                     else -> { /* ignore */ }
                 }
             }
