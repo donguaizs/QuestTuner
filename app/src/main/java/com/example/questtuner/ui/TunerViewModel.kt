@@ -10,8 +10,8 @@ import com.example.questtuner.tuner.PrivateDns
 import com.example.questtuner.tuner.OvrMetrics
 import com.example.questtuner.tuner.ProfileRepository
 import com.example.questtuner.tuner.SecureAutomation
-import com.example.questtuner.tuner.TunerCommands
-import com.example.questtuner.tuner.TunerExecutor
+import com.example.questtuner.tuner.TuningCommands
+import com.example.questtuner.tuner.TuningExecutor
 import com.example.questtuner.tuner.TunerPrefs
 import com.example.questtuner.update.SelfUpdater
 import kotlinx.coroutines.Dispatchers

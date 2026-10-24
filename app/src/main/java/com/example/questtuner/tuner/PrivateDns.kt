@@ -48,7 +48,7 @@ object PrivateDns {
                 Settings.Global.putString(cr, MODE, oldMode ?: "off")
                 Settings.Global.putString(cr, SPECIFIER, oldSpec ?: "")
             }
-            DnsResult.Rejected(e.message)
+            DnsResult.Rejected(e.message ?: "unknown error")
         }
     }
 
@@ -59,7 +59,7 @@ object PrivateDns {
             if (Settings.Global.getString(context.contentResolver, MODE) == "off") DnsResult.Ok
             else DnsResult.Rejected("回读不一致")
         } catch (e: Exception) {
-            DnsResult.Rejected(e.message)
+            DnsResult.Rejected(e.message ?: "unknown error")
         }
     }
 }

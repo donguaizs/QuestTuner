@@ -141,7 +141,8 @@ object SelfUpdater {
     fun install(context: Context, apk: File) {
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-        val session = installer.openSession(params)
+        // openSession(Int) 接 sessionId：先 createSession(params) 再 openSession(id)
+        val session = installer.openSession(installer.createSession(params))
         session.openWrite("questtuner", 0, -1).use { out ->
             apk.inputStream().use { it.copyTo(out) }
             out.flush()

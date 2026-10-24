@@ -120,7 +120,8 @@ object SecureAutomation {
             while (System.currentTimeMillis() < deadline) {
                 val list = am.getEnabledAccessibilityServiceList(
                     AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-                if (list.any { it.resolveInfo.serviceInfo.componentName == cn }) {
+                if (list.any { it.resolveInfo?.serviceInfo?.packageName == cn.packageName &&
+                        it.resolveInfo?.serviceInfo?.name == cn.className }) {
                     return@withContext true
                 }
                 delay(200)
@@ -132,7 +133,8 @@ object SecureAutomation {
         val am = context.getSystemService(android.view.accessibility.AccessibilityManager::class.java)
         val cn = a11yComponentName(context)
         return am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-            .any { it.resolveInfo.serviceInfo.componentName == cn }
+            .any { it.resolveInfo?.serviceInfo?.packageName == cn.packageName &&
+                it.resolveInfo?.serviceInfo?.name == cn.className }
     }
 
     // ---- 组合入口：P0-A 主路径（VM 与无障碍服务共用） ----

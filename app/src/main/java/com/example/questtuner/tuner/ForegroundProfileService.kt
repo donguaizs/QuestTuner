@@ -49,7 +49,7 @@ class ForegroundProfileService : AccessibilityService() {
             // 离开了有 profile 的应用 → 仅回滚我们应用过的（resetAll）
             val prev = lastAppliedPkg
             lastAppliedPkg = null
-            scope.launch { applyOrRetry(prev, TuningCommands.resetAll()) }
+            prev?.let { scope.launch { applyOrRetry(it, TuningCommands.resetAll()) } }
         }
     }
 

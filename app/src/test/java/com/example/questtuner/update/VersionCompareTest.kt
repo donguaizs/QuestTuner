@@ -27,7 +27,9 @@ class VersionCompareTest {
 
     @Test
     fun nonNumericSegments_treatedAsZero() {
-        assertTrue(SelfUpdater.versionGreaterThan("0.3.0", "0.3.beta"))
+        // "beta" 按非数字段作 0 处理：0.3.1 > 0.3.beta（1 > 0）
+        assertTrue(SelfUpdater.versionGreaterThan("0.3.1", "0.3.beta"))
+        // 0.3.x 与 0.3.0 相等（x 按 0），不视为更高
         assertFalse(SelfUpdater.versionGreaterThan("0.3.x", "0.3.0"))
     }
 

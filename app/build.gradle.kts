@@ -45,6 +45,11 @@ android {
     buildFeatures {
         compose = true
     }
+    lint {
+        //不上架 Google Play（GitHub Releases 侧载分发）；targetSdk 32 是刻意决策
+        //（规避较新 Android 后台执行限制，见 defaultConfig 注释），此 Play 专项检查不适用
+        disable += "ExpiredTargetSdkVersion"
+    }
 }
 
 dependencies {
