@@ -64,6 +64,7 @@ object TuningCommands {
         "getprop debug.oculus.textureWidth",
         "getprop debug.oculus.textureHeight",
         "getprop debug.oculus.cpuLevel",
-        "setprop debug.oculus.gpuLevel",
+        "getprop debug.oculus.gpuLevel",
+        "getprop debug.oculus.highPrecisionPassthrough",
     ).joinToString("; echo ---; ")
 }
