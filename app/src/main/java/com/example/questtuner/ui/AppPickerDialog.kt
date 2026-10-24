@@ -35,6 +35,7 @@ import com.example.questtuner.tuner.InstalledApp
 @Composable
 fun AppPickerDialog(
     apps: List<InstalledApp>,
+    loading: Boolean,
     onRefresh: () -> Unit,
     onDismiss: () -> Unit,
     onSelect: (InstalledApp) -> Unit,
@@ -58,8 +59,15 @@ fun AppPickerDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (apps.isEmpty()) {
-                    Text("应用列表为空", style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = onRefresh) { Text("加载应用列表") }
+                    if (loading) {
+                        // O4：加载中——进度提示 + 按钮防重复
+                        androidx.compose.material3.CircularProgressIndicator()
+                        Text("加载中…", style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = onRefresh, enabled = false) { Text("加载应用列表") }
+                    } else {
+                        Text("应用列表为空", style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = onRefresh) { Text("加载应用列表") }
+                    }
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         items(filtered, key = { it.packageName }) { app ->

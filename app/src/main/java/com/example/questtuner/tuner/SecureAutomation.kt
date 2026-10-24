@@ -125,12 +125,13 @@ object SecureAutomation {
         }.getOrElse { CapProbe.Error(it.message) }
     }
 
-    /** A4 行为级探测：服务是否真正 running（区别于存储层已写入） */
-    suspend fun waitA11yRunning(context: Context, timeoutMs: Long = 3_000): Boolean =
+    /** A4 行为级探测：服务是否真正 running（O1：5s 窗口 + 指数退避 200/400/800/1600/…） */
+    suspend fun waitA11yRunning(context: Context, timeoutMs: Long = 5_000): Boolean =
         withContext(Dispatchers.IO) {
             val am = context.getSystemService(android.view.accessibility.AccessibilityManager::class.java)
             val cn = a11yComponentName(context)
             val deadline = System.currentTimeMillis() + timeoutMs
+            var d = 200L
             while (System.currentTimeMillis() < deadline) {
                 val list = am.getEnabledAccessibilityServiceList(
                     AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
@@ -138,7 +139,8 @@ object SecureAutomation {
                         it.resolveInfo?.serviceInfo?.name == cn.className }) {
                     return@withContext true
                 }
-                delay(200)
+                delay(d)
+                d = (d * 2).coerceAtMost(1_000)
             }
             false
         }

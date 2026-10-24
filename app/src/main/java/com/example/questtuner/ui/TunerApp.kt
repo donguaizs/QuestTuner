@@ -161,6 +161,7 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
     if (showPicker) {
         AppPickerDialog(
             apps = state.apps,
+            loading = state.appsLoading,
             onRefresh = viewModel::loadApps,
             onDismiss = { showPicker = false },
             onSelect = { app ->
@@ -180,7 +181,8 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
                 singleLine = true,
             )
             OutlinedButton(onClick = {
-                if (state.apps.isEmpty()) viewModel.loadApps()
+                // O4：appsLoading 防重复（loadApps 内也有守卫，此处避免无谓触发）
+                if (state.apps.isEmpty() && !state.appsLoading) viewModel.loadApps()
                 showPicker = true
             }) { Text("选择应用") }
             Text("刷新率: ${hz}Hz")

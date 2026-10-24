@@ -26,6 +26,7 @@ data class UiState(
     val adbStatus: String = "未连接",
     val currentStatus: String = "",
     val apps: List<InstalledApp> = emptyList(),
+    val appsLoading: Boolean = false,      // O4：应用列表加载态（防重复 IPC）
     val profiles: List<AppProfile> = emptyList(),
     val lastCommandOutput: String = "",
     // ---- round-2 自动化与增强 ----
@@ -44,6 +45,7 @@ data class UiState(
     val updateAvailable: Boolean = false,
     val updateStatus: String = "",
     val updateProgress: Int = -1,          // -1 无任务；0..100 下载进度
+    val updateChecking: Boolean = false,   // O7：检查更新防重入
 )
 
 class TunerViewModel(app: Application) : AndroidViewModel(app) {
@@ -279,10 +281,13 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun loadApps() {
+        // O4：加载中防重入（避免选择器打开瞬间重复触发 PackageManager 全量扫描）
+        if (_state.value.appsLoading) return
+        _state.value = _state.value.copy(appsLoading = true)
         viewModelScope.launch(Dispatchers.IO) {
             val apps = AppScanner.query(getApplication())
             withContext(Dispatchers.Main) {
-                _state.value = _state.value.copy(apps = apps)
+                _state.value = _state.value.copy(apps = apps, appsLoading = false)
             }
         }
     }
@@ -353,22 +358,28 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     // ---- P1-2 自更新 ----
 
     fun checkUpdate() {
+        // O7：防重入——上一次检查未完成时忽略
+        if (_state.value.updateChecking) return
+        _state.value = _state.value.copy(updateChecking = true, updateStatus = "检查中…")
         viewModelScope.launch {
-            _state.value = _state.value.copy(updateStatus = "检查中…")
-            val r = SelfUpdater.checkLatest(getApplication())
-            r.onSuccess { info ->
-                if (info == null) {
-                    pendingRelease = null
-                    _state.value = _state.value.copy(updateStatus = "已是最新版本")
-                } else {
-                    pendingRelease = info
-                    _state.value = _state.value.copy(
-                        updateAvailable = true,
-                        updateStatus = "新版本 ${info.tag} 可用（${info.size / 1024}KB）",
-                    )
+            try {
+                val r = SelfUpdater.checkLatest(getApplication())
+                r.onSuccess { info ->
+                    if (info == null) {
+                        pendingRelease = null
+                        _state.value = _state.value.copy(updateStatus = "已是最新版本")
+                    } else {
+                        pendingRelease = info
+                        _state.value = _state.value.copy(
+                            updateAvailable = true,
+                            updateStatus = "新版本 ${info.tag} 可用（${info.size / 1024}KB）",
+                        )
+                    }
+                }.onFailure {
+                    _state.value = _state.value.copy(updateStatus = "检查失败: ${it.message}")
                 }
-            }.onFailure {
-                _state.value = _state.value.copy(updateStatus = "检查失败: ${it.message}")
+            } finally {
+                _state.value = _state.value.copy(updateChecking = false)
             }
         }
     }

@@ -20,7 +20,8 @@ fun UpdateCard(state: UiState, viewModel: TunerViewModel) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("更新", style = MaterialTheme.typography.titleMedium)
-            Text("当前 ${state.updateStatus.ifEmpty { "手动检查更新（GitHub Releases，HTTPS）" }}",
+            // O8：文案直读，去掉别扭的「当前 …」前缀
+            Text(if (state.updateStatus.isEmpty()) "手动检查更新（GitHub Releases，HTTPS）" else state.updateStatus,
                 style = MaterialTheme.typography.bodySmall)
             if (state.updateProgress >= 0) {
                 LinearProgressIndicator(
@@ -29,7 +30,11 @@ fun UpdateCard(state: UiState, viewModel: TunerViewModel) {
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = viewModel::checkUpdate) { Text("检查更新") }
+                // O7：检查中禁用，防重入
+                OutlinedButton(
+                    onClick = viewModel::checkUpdate,
+                    enabled = !state.updateChecking,
+                ) { Text(if (state.updateChecking) "检查中…" else "检查更新") }
                 if (state.updateAvailable) {
                     Button(onClick = viewModel::downloadAndInstall) { Text("下载并安装") }
                 }

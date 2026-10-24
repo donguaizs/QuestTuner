@@ -102,8 +102,10 @@ private fun SwitchRow(
 @Composable
 private fun OvrMetricsSection(state: UiState, viewModel: TunerViewModel) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    // O3：包安装检测结果缓存——避免每次重组都发一次 PackageManager IPC
+    val available = remember(ctx) { OvrMetrics.isAvailable(ctx) }
     Text("OVR Metrics 性能叠加层", style = MaterialTheme.typography.bodyMedium)
-    if (!OvrMetrics.isAvailable(ctx)) {
+    if (!available) {
         // 确定探测失败：目标包不存在 → 整块禁用并说明
         Text("未检测到 OVR Metrics 服务（com.oculus.ovrmonitormetricsservice），功能不可用。",
             style = MaterialTheme.typography.bodySmall)

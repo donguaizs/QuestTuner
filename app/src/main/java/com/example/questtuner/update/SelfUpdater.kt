@@ -30,6 +30,9 @@ object SelfUpdater {
     /** tag 安全字符集（BUG-022）：git tag 允许含 '/'，可构造路径穿越；仅放行安全字符集 */
     private val TAG_SAFE = Regex("^[A-Za-z0-9._-]+$")
 
+    /** 纯函数（可单测）：tag 是否在安全字符集内 */
+    fun isTagSafe(tag: String): Boolean = TAG_SAFE.matches(tag)
+
     /** host 白名单纯函数（可单测） */
     fun checkHost(url: String): Boolean =
         runCatching { URL(url).host in ALLOWED_HOSTS }.getOrDefault(false)
@@ -208,6 +211,9 @@ object SelfUpdater {
     fun consumeInstallResult() { _installResult.value = null }
 
     // ---- 版本比较（纯函数，单测覆盖）："0.3.0" > "0.2.9" ----
+    // O6 语义文档化：tag 命名约定 vX.Y.Z；含 pre-release 后缀的 tag（如 v0.3.0-beta.1）
+    // 的非数字段按 0 处理，通常不高于同数字段的正式版——即 pre-release 不触发自更新
+    // （防误装测试版，安全方向）。完整 semver pre-release 排序留 round-4。
     fun versionGreaterThan(a: String, b: String): Boolean {
         val pa = a.split('.').map { it.toIntOrNull() ?: 0 }
         val pb = b.split('.').map { it.toIntOrNull() ?: 0 }
