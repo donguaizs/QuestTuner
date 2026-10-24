@@ -31,6 +31,10 @@ class TunerPrefs private constructor(context: Context) {
     var metricsStat: Boolean
         get() = sp.getBoolean(K_METRICS_STAT, false)
         set(v) = sp.edit().putBoolean(K_METRICS_STAT, v).apply()
+    /** BUG-032：「无线调试由本应用开启」持久标记（进程被杀后启动对账用） */
+    var wifiAdbByUs: Boolean
+        get() = sp.getBoolean(K_WIFI_ADB_BY_US, false)
+        set(v) = sp.edit().putBoolean(K_WIFI_ADB_BY_US, v).apply()
 
     companion object {
         private const val K_AUTO_WIFI_ADB = "auto_wifi_adb"
@@ -41,6 +45,7 @@ class TunerPrefs private constructor(context: Context) {
         private const val K_METRICS_OVERLAY = "metrics_overlay"
         private const val K_METRICS_GRAPH = "metrics_graph"
         private const val K_METRICS_STAT = "metrics_stat"
+        private const val K_WIFI_ADB_BY_US = "wifi_adb_by_us"
         fun get(context: Context): TunerPrefs = TunerPrefs(context)
     }
 }

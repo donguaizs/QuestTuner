@@ -74,6 +74,10 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
         refreshCapabilities()   // BUG-029：取代原 init 一次性能力快照
+        viewModelScope.launch(Dispatchers.IO) {
+            // BUG-032：启动对账——上次会话残留的「我们开的无线调试」回滚（保守：只回滚自己标记的）
+            SecureAutomation.reconcileWifiAdbOnStartup(getApplication())
+        }
         viewModelScope.launch {
             SelfUpdater.installResult.collect { r ->
                 if (r != null) {
