@@ -4,6 +4,8 @@ import android.content.Context
 import com.example.questtuner.adb.AdbConnection
 import com.example.questtuner.adb.AdbKeyStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -18,6 +20,36 @@ object TuningExecutor {
     @Volatile private var connection: AdbConnection? = null
     @Volatile var lastError: String? = null
         private set
+
+    /**
+     * 最近一次连接失败是否为 TCP 拒绝（adbd 未监听）——BUG-026 重试分类用（A11）；
+     * 其他失败（AUTH 超时/链路异常）不重试。分类失败（无法判断）按可重试处理，不劣化现状。
+     */
+    @Volatile private var lastFailureWasRefused: Boolean = false
+
+    fun lastErrorIsRefused(): Boolean = lastFailureWasRefused
+
+    /** 连接实态（服务侧重连/意外断开后 UI 同步用，BUG-027 / O10 根因） */
+    private val _connectionState = MutableStateFlow(false)
+    val connectionState: StateFlow<Boolean> = _connectionState
+
+    /**
+     * ADB 会话语义（BUG-027）：
+     * true  = 用户显式连接过且未显式断开 → autoApply 服务可以工作/自行恢复连接
+     * false = 用户从未连接或已显式断开 → 服务 no-op（不重连、不重开无线调试）
+     * 意外断开（runCommand 失败清理）不改此标志——服务可重连自愈。
+     */
+    @Volatile var adbSessionActive: Boolean = false
+        private set
+
+    fun markSessionActive() { adbSessionActive = true }
+    fun markSessionInactive() { adbSessionActive = false }
+
+    /** 手动应用代次（BUG-020）：UI 每次手动应用/恢复默认时递增；服务比对快照代次判断是否已被手动覆盖 */
+    @Volatile var manualGeneration: Int = 0
+        private set
+
+    fun bumpManualGeneration() { manualGeneration++ }
 
     /** UI 侧跨函数竞争防线（applyProfile 中 refreshStatus 等）；AdbConnection 内层锁是最终防线 */
     private val adbMutex = Mutex()
@@ -40,10 +72,15 @@ object TuningExecutor {
         }
         if (result.isSuccess) {
             connection = conn
+            _connectionState.value = true
             lastError = null
+            lastFailureWasRefused = false
             true
         } else {
-            lastError = result.exceptionOrNull()?.message ?: "connect failed"
+            val e = result.exceptionOrNull()
+            lastError = e?.message ?: "connect failed"
+            // A11：拒连=adbd 未就绪（可重试）；超时/IOException=AUTH 等待或链路问题（不重试）
+            lastFailureWasRefused = e is java.net.ConnectException
             conn.close()
             false
         }
@@ -70,7 +107,10 @@ object TuningExecutor {
             lastError = e?.message
             if (e is java.io.IOException) {
                 conn.close()
-                if (connection === conn) connection = null
+                if (connection === conn) {
+                    connection = null
+                    _connectionState.value = false
+                }
             }
             return null
         }
@@ -92,5 +132,6 @@ object TuningExecutor {
     fun disconnect() {
         connection?.close()
         connection = null
+        _connectionState.value = false
     }
 }

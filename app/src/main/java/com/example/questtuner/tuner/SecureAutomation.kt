@@ -8,6 +8,7 @@ import android.provider.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /** WRITE_SECURE_SETTINGS 自动化：每个操作 = 尝试 + 回读探测，结果用 CapProbe 如实返回。 */
 object SecureAutomation {
@@ -87,9 +88,14 @@ object SecureAutomation {
             val cur = Settings.Secure.getString(cr, "enabled_accessibility_services") ?: ""
             if (!cur.split(':').map { it.trim() }.contains(flat)) {
                 val next = mergeA11yList(cur, flat)
-                Settings.Secure.putString(cr, "enabled_accessibility_services", next)
+                // BUG-025 对称补强：putString 静默失败返回 false 不抛异常——显式检查
+                if (!Settings.Secure.putString(cr, "enabled_accessibility_services", next)) {
+                    return@runCatching CapProbe.WriteRejected
+                }
             }
-            Settings.Secure.putString(cr, "accessibility_enabled", "1")
+            if (!Settings.Secure.putString(cr, "accessibility_enabled", "1")) {
+                return@runCatching CapProbe.WriteRejected
+            }
             // 回读（存储层确认）
             val stored = Settings.Secure.getString(cr, "enabled_accessibility_services") ?: ""
             if (!stored.split(':').map { it.trim() }.contains(flat)) CapProbe.WriteRejected
@@ -105,18 +111,27 @@ object SecureAutomation {
             val cur = Settings.Secure.getString(cr, "enabled_accessibility_services") ?: ""
             val rest = cur.split(':').map { it.trim() }
                 .filter { it.isNotEmpty() && it != flat }.joinToString(":")
-            Settings.Secure.putString(cr, "enabled_accessibility_services", rest)
-            if (rest.isEmpty()) Settings.Secure.putString(cr, "accessibility_enabled", "0")
-            CapProbe.Ok
+            // putString 返回 false = 静默失败（不抛异常）——显式检查
+            if (!Settings.Secure.putString(cr, "enabled_accessibility_services", rest)) {
+                return@runCatching CapProbe.WriteRejected
+            }
+            if (rest.isEmpty() && !Settings.Secure.putString(cr, "accessibility_enabled", "0")) {
+                return@runCatching CapProbe.WriteRejected
+            }
+            // 回读探测（与 enable 分支对称）：确认 flat 已移除
+            val stored = Settings.Secure.getString(cr, "enabled_accessibility_services") ?: ""
+            if (stored.split(':').map { it.trim() }.contains(flat)) CapProbe.WriteRejected
+            else CapProbe.Ok
         }.getOrElse { CapProbe.Error(it.message) }
     }
 
-    /** A4 行为级探测：服务是否真正 running（区别于存储层已写入） */
-    suspend fun waitA11yRunning(context: Context, timeoutMs: Long = 3_000): Boolean =
+    /** A4 行为级探测：服务是否真正 running（O1：5s 窗口 + 指数退避 200/400/800/1600/…） */
+    suspend fun waitA11yRunning(context: Context, timeoutMs: Long = 5_000): Boolean =
         withContext(Dispatchers.IO) {
             val am = context.getSystemService(android.view.accessibility.AccessibilityManager::class.java)
             val cn = a11yComponentName(context)
             val deadline = System.currentTimeMillis() + timeoutMs
+            var d = 200L
             while (System.currentTimeMillis() < deadline) {
                 val list = am.getEnabledAccessibilityServiceList(
                     AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
@@ -124,7 +139,8 @@ object SecureAutomation {
                         it.resolveInfo?.serviceInfo?.name == cn.className }) {
                     return@withContext true
                 }
-                delay(200)
+                delay(d)
+                d = (d * 2).coerceAtMost(1_000)
             }
             false
         }
@@ -138,27 +154,36 @@ object SecureAutomation {
     }
 
     // ---- 组合入口：P0-A 主路径（VM 与无障碍服务共用） ----
-    // 假设A3：写入后 adbd 数秒内就绪 → 重试连接（最多 4 次、间隔 1.5s；TCP 拒连是快速失败）
-    // 失败：返回 false，note 带降级原因
+    // 假设A3：写入后 adbd 数秒内就绪 → 重试连接（拒连是快速失败）
+    // BUG-026：总闸 60s + 分类短路——AUTH 等待超时（adbd 在等用户确认）不重试，立即给指引
     suspend fun ensureWifiAdbThenConnect(
         context: Context,
         onNote: (String) -> Unit = {},
     ): Boolean = withContext(Dispatchers.IO) {
-        val prefs = TunerPrefs.get(context)
-        if (prefs.autoWifiAdb && hasWriteSecureSettings(context)) {
-            when (val r = enableWifiAdb(context)) {
-                is CapProbe.Ok -> onNote("已自动开启无线调试，等待 adbd…")
-                is CapProbe.NoPermission -> onNote("未授权，走手动流程")
-                is CapProbe.WriteRejected -> onNote("无线调试写入被固件拒绝，请手动开启")
-                is CapProbe.Error -> onNote("无线调试自动开启失败(${r.message})，请手动开启")
+        // 总闸：拒连重试 4×快速 + 单次 AUTH 35s 均在 60s 内完成；超总闸=失败
+        withTimeout(60_000L) {
+            val prefs = TunerPrefs.get(context)
+            if (prefs.autoWifiAdb && hasWriteSecureSettings(context)) {
+                when (val r = enableWifiAdb(context)) {
+                    is CapProbe.Ok -> onNote("已自动开启无线调试，等待 adbd…")
+                    is CapProbe.NoPermission -> onNote("未授权，走手动流程")
+                    is CapProbe.WriteRejected -> onNote("无线调试写入被固件拒绝，请手动开启")
+                    is CapProbe.Error -> onNote("无线调试自动开启失败(${r.message})，请手动开启")
+                }
             }
+            // 无论自动化成功与否都继续尝试连接（用户可能本来就手动开着）
+            repeat(4) { attempt ->
+                if (TuningExecutor.ensureConnected(context)) return@withTimeout true
+                // 分类短路：非拒连失败（AUTH 等待超时/链路异常）重试无意义——
+                // adbd 在等用户在头显上确认授权，立即把指引给出来
+                if (!TuningExecutor.lastErrorIsRefused()) {
+                    onNote("adbd 未确认授权：请在头显上点击「允许 USB 调试」，或检查无线调试状态")
+                    return@withTimeout false
+                }
+                if (attempt < 3) delay(1_500)
+            }
+            false
         }
-        // 无论自动化成功与否都继续尝试连接（用户可能本来就手动开着）
-        repeat(4) { attempt ->
-            if (TuningExecutor.ensureConnected(context)) return@withContext true
-            if (attempt < 3) delay(1_500)
-        }
-        false
     }
 
     // ---- 纯函数（可单测）：合并无障碍服务列表 ----

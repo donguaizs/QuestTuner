@@ -26,6 +26,7 @@ data class UiState(
     val adbStatus: String = "未连接",
     val currentStatus: String = "",
     val apps: List<InstalledApp> = emptyList(),
+    val appsLoading: Boolean = false,      // O4：应用列表加载态（防重复 IPC）
     val profiles: List<AppProfile> = emptyList(),
     val lastCommandOutput: String = "",
     // ---- round-2 自动化与增强 ----
@@ -44,6 +45,7 @@ data class UiState(
     val updateAvailable: Boolean = false,
     val updateStatus: String = "",
     val updateProgress: Int = -1,          // -1 无任务；0..100 下载进度
+    val updateChecking: Boolean = false,   // O7：检查更新防重入
 )
 
 class TunerViewModel(app: Application) : AndroidViewModel(app) {
@@ -53,6 +55,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<UiState> = _state
     private val prefs = TunerPrefs.get(app)
     private var pendingRelease: SelfUpdater.ReleaseInfo? = null
+    /** BUG-026：connecting 态的连接协程，支持取消 */
+    private var connectJob: kotlinx.coroutines.Job? = null
 
     init {
         viewModelScope.launch {
@@ -81,16 +85,34 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+        // BUG-027 / O10：executor 连接实态同步 UI——服务侧重连/意外断开都不再脱节
+        viewModelScope.launch {
+            TuningExecutor.connectionState.collect { live ->
+                if (!live && _state.value.connected) {
+                    _state.value = _state.value.copy(
+                        connected = false,
+                        adbStatus = "连接已断开（autoApply 将在下次前台切换时自动恢复）",
+                    )
+                } else if (live && !_state.value.connected) {
+                    _state.value = _state.value.copy(
+                        connected = true,
+                        adbStatus = "已连接（由自动应用恢复）",
+                    )
+                }
+            }
+        }
     }
 
     fun connect() {
         if (_state.value.connecting) return
         _state.value = _state.value.copy(connecting = true, adbStatus = "连接中…")
-        viewModelScope.launch {
+        connectJob = viewModelScope.launch {
             val ok = SecureAutomation.ensureWifiAdbThenConnect(getApplication()) { note ->
                 _state.value = _state.value.copy(adbStatus = note)
             }
             if (ok) {
+                // BUG-027：用户显式连接成功 → 激活会话（autoApply 服务可工作/自愈）
+                TuningExecutor.markSessionActive()
                 refreshStatus()
                 _state.value = _state.value.copy(
                     connected = true,
@@ -111,8 +133,20 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** BUG-026：connecting 态的取消入口 */
+    fun cancelConnect() {
+        connectJob?.cancel()
+        connectJob = null
+        _state.value = _state.value.copy(
+            connecting = false,
+            adbStatus = "已取消连接（可重新点连接）",
+        )
+    }
+
     fun disconnect() {
         viewModelScope.launch(Dispatchers.IO) {
+            // BUG-027：用户显式断开 → 会话结束，autoApply 服务 no-op（在 executor 断开前标记）
+            TuningExecutor.markSessionInactive()
             TuningExecutor.disconnect()
             SecureAutomation.disableWifiAdbIfWeEnabled(getApplication())
             withContext(Dispatchers.Main) {
@@ -158,9 +192,18 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             }
         } else {
             viewModelScope.launch(Dispatchers.IO) {
-                SecureAutomation.disableA11yService(getApplication())
+                // BUG-025：停用结果如实写进 adbStatus（与启用分支文案对称）
+                val r = SecureAutomation.disableA11yService(getApplication())
                 withContext(Dispatchers.Main) {
-                    _state.value = _state.value.copy(a11yRunning = false)
+                    _state.value = _state.value.copy(
+                        a11yRunning = false,
+                        adbStatus = when (r) {
+                            is SecureAutomation.CapProbe.Ok -> "无障碍服务已停用"
+                            is SecureAutomation.CapProbe.WriteRejected -> "停用写入被拒绝，请到系统设置手动关闭"
+                            is SecureAutomation.CapProbe.Error -> "停用失败(${r.message})，请到系统设置手动关闭"
+                            is SecureAutomation.CapProbe.NoPermission -> "未授权，请到系统设置手动关闭"
+                        },
+                    )
                 }
             }
         }
@@ -238,10 +281,18 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun loadApps() {
+        // O4：加载中防重入（避免选择器打开瞬间重复触发 PackageManager 全量扫描）
+        if (_state.value.appsLoading) return
+        _state.value = _state.value.copy(appsLoading = true)
         viewModelScope.launch(Dispatchers.IO) {
-            val apps = AppScanner.query(getApplication())
-            withContext(Dispatchers.Main) {
-                _state.value = _state.value.copy(apps = apps)
+            try {
+                val apps = AppScanner.query(getApplication())
+                withContext(Dispatchers.Main) {
+                    _state.value = _state.value.copy(apps = apps)
+                }
+            } finally {
+                // 异常也必须复位 loading（StateFlow 任意线程可写），否则选择器永久「加载中」
+                _state.value = _state.value.copy(appsLoading = false)
             }
         }
     }
@@ -249,6 +300,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     fun applyProfile(p: AppProfile) {
         viewModelScope.launch {
             val cmds = p.toCommands()
+            // BUG-020：手动应用 → 代次递增，服务后续 Leave 不回滚用户意志
+            TuningExecutor.bumpManualGeneration()
             val ok = TuningExecutor.runCommands(cmds)
             val sb = StringBuilder()
             sb.append("应用 ${p.label ?: p.packageName} ")
@@ -291,6 +344,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resetAll() {
         viewModelScope.launch {
+            // BUG-020：手动恢复默认 → 代次递增
+            TuningExecutor.bumpManualGeneration()
             val ok = TuningExecutor.runCommands(TuningCommands.resetAll())
             _state.value = _state.value.copy(
                 lastCommandOutput = if (ok) "已恢复默认" else "失败: ${TuningExecutor.lastError}"
@@ -308,22 +363,28 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     // ---- P1-2 自更新 ----
 
     fun checkUpdate() {
+        // O7：防重入——上一次检查未完成时忽略
+        if (_state.value.updateChecking) return
+        _state.value = _state.value.copy(updateChecking = true, updateStatus = "检查中…")
         viewModelScope.launch {
-            _state.value = _state.value.copy(updateStatus = "检查中…")
-            val r = SelfUpdater.checkLatest(getApplication())
-            r.onSuccess { info ->
-                if (info == null) {
-                    pendingRelease = null
-                    _state.value = _state.value.copy(updateStatus = "已是最新版本")
-                } else {
-                    pendingRelease = info
-                    _state.value = _state.value.copy(
-                        updateAvailable = true,
-                        updateStatus = "新版本 ${info.tag} 可用（${info.size / 1024}KB）",
-                    )
+            try {
+                val r = SelfUpdater.checkLatest(getApplication())
+                r.onSuccess { info ->
+                    if (info == null) {
+                        pendingRelease = null
+                        _state.value = _state.value.copy(updateStatus = "已是最新版本")
+                    } else {
+                        pendingRelease = info
+                        _state.value = _state.value.copy(
+                            updateAvailable = true,
+                            updateStatus = "新版本 ${info.tag} 可用（${info.size / 1024}KB）",
+                        )
+                    }
+                }.onFailure {
+                    _state.value = _state.value.copy(updateStatus = "检查失败: ${it.message}")
                 }
-            }.onFailure {
-                _state.value = _state.value.copy(updateStatus = "检查失败: ${it.message}")
+            } finally {
+                _state.value = _state.value.copy(updateChecking = false)
             }
         }
     }
@@ -342,14 +403,20 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             }
             _state.value = _state.value.copy(updateStatus = "下载中…", updateProgress = 0)
             val apk = SelfUpdater.updateApk(ctx, info.tag)
-            SelfUpdater.download(info.url, apk) { p ->
+            SelfUpdater.download(info.url, info.size, apk) { p ->
                 _state.value = _state.value.copy(updateProgress = p)
             }.onSuccess { f ->
                 // 四重校验失败 → 删文件 + 状态提示，绝不进入安装
                 SelfUpdater.verifyApk(ctx, f).onSuccess {
                     _state.value = _state.value.copy(
                         updateStatus = "校验通过，等待系统确认…", updateProgress = -1)
-                    SelfUpdater.install(ctx, f)
+                    // BUG-024：安装异常（磁盘满/会话失败）→ 状态提示，不再有崩溃路径
+                    SelfUpdater.install(ctx, f).onFailure { e ->
+                        f.delete()
+                        _state.value = _state.value.copy(
+                            updateStatus = "安装失败: ${e.message}（可用 PC adb install 手动更新）",
+                            updateProgress = -1)
+                    }
                 }.onFailure { e ->
                     f.delete()
                     _state.value = _state.value.copy(

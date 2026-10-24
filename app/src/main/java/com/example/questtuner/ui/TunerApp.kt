@@ -64,8 +64,12 @@ fun ConnectionCard(state: UiState, viewModel: TunerViewModel) {
             Text("ADB 连接", style = MaterialTheme.typography.titleMedium)
             Text(state.adbStatus, style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = viewModel::connect, enabled = !state.connected && !state.connecting) {
-                    Text(if (state.connecting) "连接中…" else "连接 127.0.0.1:5555")
+                // BUG-026：connecting 态变取消按钮，协程 cancel 解除阻塞（round-1 取消语义已具备）
+                Button(
+                    onClick = if (state.connecting) viewModel::cancelConnect else viewModel::connect,
+                    enabled = !state.connected || state.connecting,
+                ) {
+                    Text(if (state.connecting) "取消" else "连接 127.0.0.1:5555")
                 }
                 OutlinedButton(onClick = viewModel::refreshStatus, enabled = state.connected) {
                     Text("刷新状态")
@@ -157,6 +161,7 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
     if (showPicker) {
         AppPickerDialog(
             apps = state.apps,
+            loading = state.appsLoading,
             onRefresh = viewModel::loadApps,
             onDismiss = { showPicker = false },
             onSelect = { app ->
@@ -176,7 +181,8 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
                 singleLine = true,
             )
             OutlinedButton(onClick = {
-                if (state.apps.isEmpty()) viewModel.loadApps()
+                // O4：appsLoading 防重复（loadApps 内也有守卫，此处避免无谓触发）
+                if (state.apps.isEmpty() && !state.appsLoading) viewModel.loadApps()
                 showPicker = true
             }) { Text("选择应用") }
             Text("刷新率: ${hz}Hz")

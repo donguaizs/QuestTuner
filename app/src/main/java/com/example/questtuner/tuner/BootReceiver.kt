@@ -6,6 +6,7 @@ import android.content.Intent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -24,10 +25,17 @@ class BootReceiver : BroadcastReceiver() {
         if (!TunerPrefs.get(context).restoreOnBoot) return
         val appContext = context.applicationContext
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            val ok = runCatching {
-                SecureAutomation.ensureWifiAdbThenConnect(appContext) &&
+            // 独立会话：不 markSessionActive，开机恢复后 autoApply 不自动激活（用户显式连接后激活）
+            // O2：开机慢（adbd 未就绪可能持续数十秒）——30s 总时限轮询，只调 ensureConnected
+            // （拒连才重试），不嵌套 ensureWifiAdbThenConnect 的 60s 总闸
+            val deadline = System.currentTimeMillis() + 30_000L
+            var ok = false
+            while (System.currentTimeMillis() < deadline) {
+                ok = TuningExecutor.ensureConnected(appContext) &&
                     TuningExecutor.runCommands(TuningCommands.resetAll())
-            }.getOrDefault(false)
+                if (ok) break
+                delay(3_000)
+            }
             TuningExecutor.disconnect()
             SecureAutomation.disableWifiAdbIfWeEnabled(appContext)
             log(appContext, if (ok) "boot restore ok" else "boot restore failed: ${TuningExecutor.lastError}")

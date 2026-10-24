@@ -13,6 +13,10 @@ object PrivateDns {
     private const val MODE = "private_dns_mode"
     private const val SPECIFIER = "private_dns_specifier"
 
+    /** O5：RFC 1123 近似的合法主机名（每段 1-63 字符字母数字连字符，段首尾非连字符） */
+    private val HOSTNAME_SAFE =
+        Regex("^[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?)*$")
+
     sealed class DnsResult {
         object Ok : DnsResult()
         object NoPermission : DnsResult()
@@ -27,16 +31,19 @@ object PrivateDns {
 
     fun setHostname(context: Context, host: String): DnsResult {
         if (!SecureAutomation.hasWriteSecureSettings(context)) return DnsResult.NoPermission
+        // O5：RFC 1123 近似格式校验——错误主机名会导致设备联网异常，入口拦截
+        val h = host.trim()
+        if (!HOSTNAME_SAFE.matches(h)) return DnsResult.Rejected("主机名格式不正确")
         val cr = context.contentResolver
         val oldMode = currentMode(context)
         val oldSpec = currentSpecifier(context)
         return try {
             Settings.Global.putString(cr, MODE, "hostname")
-            Settings.Global.putString(cr, SPECIFIER, host)
+            Settings.Global.putString(cr, SPECIFIER, h)
             // 回读探测
             val m = Settings.Global.getString(cr, MODE)
             val s = Settings.Global.getString(cr, SPECIFIER)
-            if (m == "hostname" && s == host) DnsResult.Ok
+            if (m == "hostname" && s == h) DnsResult.Ok
             else {
                 // 失败自动还原，不留半套状态
                 Settings.Global.putString(cr, MODE, oldMode ?: "off")
