@@ -3,6 +3,7 @@ package com.example.questtuner.adb
 import android.content.Context
 import android.os.Build
 import java.io.File
+import java.math.BigInteger
 import java.security.KeyFactory
 import java.security.interfaces.RSAPublicKey
 import java.security.spec.RSAPublicKeySpec
@@ -23,10 +24,17 @@ class AdbKeyStore(context: Context) {
         if (publicKey != null) return
         val privFile = File(dir, "adbkey")
         val pubFile = File(dir, "adbkey.pub")
-        if (privFile.exists() && pubFile.exists()) {
-            privateKeyEncoded = Base64.getDecoder().decode(privFile.readText().trim())
-            publicKey = parsePublicKeyFile(pubFile.readText())
-        } else {
+        val loaded = privFile.exists() && pubFile.exists() && runCatching {
+            privateKeyEncoded = Base64.getDecoder().decode(privFile.readText().trim())   // 可抛（非法 base64）
+            publicKey = parsePublicKeyFile(pubFile.readText())                            // 可抛（损坏/旧格式）
+            // 旧格式检测：n0inv 与按新公式计算不一致 → 视为 BUG-001 修复前的旧编码，自愈重建
+            check(wireN0Inv(pubFile.readText()) == expectedN0Inv(publicKey!!.modulus)) { "legacy pubkey format" }
+            privateKeyEncoded != null && publicKey != null
+        }.getOrDefault(false)
+        if (!loaded) {
+            // 自愈：加载失败/旧格式 → 删除旧文件，走生成分支重建
+            privFile.delete()
+            pubFile.delete()
             val pair = AdbKey.generate()
             privateKeyEncoded = pair.private.encoded
             publicKey = pair.public as RSAPublicKey
@@ -34,6 +42,18 @@ class AdbKeyStore(context: Context) {
             pubFile.writeText(AdbKey.encodePublic(pair.public as RSAPublicKey, deviceName()))
         }
         // 写一份 "name@host" 格式的公钥副本，便于用户拿到 PC adb 使用（可选）
+    }
+
+    /** 从 pub 文本解析出 wire 中的 n0inv 字段 */
+    private fun wireN0Inv(text: String): Long {
+        val bytes = Base64.getDecoder().decode(text.trim().split(" ")[0])
+        val bb = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        bb.int; return bb.int.toLong() and 0xffffffffL
+    }
+
+    private fun expectedN0Inv(n: BigInteger): Long {
+        val m = BigInteger.TWO.pow(32)
+        return n.mod(m).modInverse(m).negate().mod(m).toLong()
     }
 
     fun sign(token: ByteArray, algorithm: String = "SHA256withRSA"): ByteArray {
