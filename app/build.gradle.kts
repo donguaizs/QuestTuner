@@ -51,6 +51,20 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests {
+            // Robolectric 访问资源必需（round-8 测试质量专项）
+            isIncludeAndroidResources = true
+            // 构建机文件沙箱拒绝测试 JVM 写用户主目录（Robolectric 下载锁 ~/.robolectric-download-lock
+            // 与 .m2 缓存）——user.home 重定向到工作区可写目录；android-all jar 由 Gradle
+            // 依赖解析预取后放入该 m2 仓库（Robolectric 走 maven.repo.local 查找）
+            all {
+                it.systemProperty("user.home", "F:\\workspace\\toolchain\\robolectric-home")
+                it.systemProperty("maven.repo.local",
+                    "F:\\workspace\\toolchain\\robolectric-home\\.m2\\repository")
+            }
+        }
+    }
     lint {
         //不上架 Google Play（GitHub Releases 侧载分发）；targetSdk 32 是刻意决策
         //（规避较新 Android 后台执行限制，见 defaultConfig 注释），此 Play 专项检查不适用
@@ -72,4 +86,13 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // org.json 在 Android 单元测试是 stub；SelfUpdater 的 JSON 解析测试需要真实实现
     testImplementation("org.json:json:20240303")
+
+    // ---- Round8 测试质量专项 ----
+    testImplementation("org.robolectric:robolectric:4.12.2")     // 盲区3 框架交互测试
+    // 注意：不要把 android-all-instrumented 加进 testImplementation——它内置
+    // RobolectricInternals 注入的框架类，会遮蔽 mockable android.jar，令普通 JUnit
+    // 测试在非沙箱环境初始化框架类时 NPE（round-8 教训）。预取方式：gradle 依赖解析
+    // 一次后把 jar 复制进 robolectric-home/.m2（Robolectric 运行时经 maven.repo.local 离线命中）。
+    debugImplementation("androidx.compose.ui:ui-test-manifest")  // Compose 测试需要（BOM 管版本）
+    testImplementation("androidx.compose.ui:ui-test-junit4")     // 盲区1 Compose UI 测试（BOM 管版本）
 }
