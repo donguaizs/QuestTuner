@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Quest 3 是平板级大屏设备 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- 无界面系统服务无需 launcher activity；但为了调试便利仍提供主入口 -->
+    <application
+        android:label="QuestTuner"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/Theme.QuestTuner">
+
+        <meta-data android:name="com.oculus.vrfocusaware" android:value="false" />
+
+        <!-- 2D 平板模式主界面 -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -1,0 +1,16 @@
+# Build
+build/
+.gradle/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Keystore (debug only, regenerable)
+keystore/
+
+# OS
+Thumbs.db
+.DS_Store
