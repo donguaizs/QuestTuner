@@ -54,6 +54,11 @@ object TuningExecutor {
         val r = adbMutex.withLock { conn.shell(cmd) }
         if (r.isSuccess) r.getOrNull() else {
             lastError = r.exceptionOrNull()?.message
+            // shell 失败大概率是连接已死（IOException）——关闭并置空，允许重连
+            if (r.exceptionOrNull() is java.io.IOException) {
+                conn.close()
+                connection = null
+            }
             null
         }
     }
@@ -69,6 +74,11 @@ object TuningExecutor {
         val r = conn.shell(cmd)
         if (r.isSuccess) return r.getOrNull()
         lastError = r.exceptionOrNull()?.message
+        // 连接级失败（IOException）时清理死连接，允许重连
+        if (r.exceptionOrNull() is java.io.IOException) {
+            conn.close()
+            if (connection === conn) connection = null
+        }
         return null
     }
 
