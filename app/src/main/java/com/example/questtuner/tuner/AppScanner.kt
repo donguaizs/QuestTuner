@@ -35,7 +35,7 @@ object AppScanner {
             val pkg = ri.activityInfo.packageName
             if (pkg == context.packageName) return@forEach
             // 检查 activity 或 application 的 VR 类别
-            val isVr = hasVrCategory(pm, ri.activityInfo)
+            val isVr = hasVrCategory(pm, ri)
             val item = InstalledApp(
                 packageName = pkg,
                 label = runCatching { ri.loadLabel(pm).toString() }.getOrDefault(pkg),
@@ -49,22 +49,35 @@ object AppScanner {
 
     /**
      * Quest VR 启动页声明 <category android:name="com.meta.intent.category.VR" />
-     * queryIntentActivities 不返回 manifest categories，需要从 activityInfo 手动读。
+     * queryIntentActivities 返回的 ResolveInfo.filter 携带 manifest categories，优先读；
+     * application meta-data 作为兜底（需 GET_META_DATA）。
      */
-    private fun hasVrCategory(pm: PackageManager, info: android.content.pm.ActivityInfo): Boolean {
-        // queryIntentActivities 已解析的 intent filter 在 ri.filter，但该 API 已是 resolved,
-        // 手动加载一次完整 ActivityInfo
-        val full = pm.getActivityInfo(android.content.ComponentName(info.packageName, info.name), 0)
-        // ActivityInfo 无法直接读 categories；VR 应用还会声明 oculus intent filter
-        // 简化：VR 应用通常没有 CATEGORY_LAUNCHER 而是 CATEGORY_INFO + VR 类别
-        // 检查 application meta-data
-        val appMeta = full.applicationInfo.metaData
+    private fun hasVrCategory(pm: PackageManager, ri: android.content.pm.ResolveInfo): Boolean {
+        // 1) intent-filter categories（VR launcher 的标准声明方式）
+        val f = ri.filter
+        if (f != null) {
+            for (i in 0 until f.countCategories()) {
+                val c = f.getCategory(i)
+                if (c == VR_CATEGORY_META || c == VR_CATEGORY_META2) return true
+            }
+        }
+        // 2) 兜底：application meta-data（需 GET_META_DATA）
+        val full = runCatching {
+            pm.getActivityInfo(
+                android.content.ComponentName(ri.activityInfo.packageName, ri.activityInfo.name),
+                PackageManager.GET_META_DATA,
+            )
+        }.getOrNull() ?: return packageFallback(ri.activityInfo.packageName)
+        val appMeta = full.applicationInfo?.metaData
         val metaVr = appMeta?.getBoolean(VR_CATEGORY_META, false)
             ?: appMeta?.getBoolean(VR_CATEGORY_META2, false)
             ?: false
         if (metaVr) return true
-        // 兜底：知名 VR 包名前缀
-        val pkgLower = info.packageName.lowercase()
-        return pkgLower.startsWith("com.oculus") || pkgLower.startsWith("com.meta.")
+        return packageFallback(ri.activityInfo.packageName)
+    }
+
+    private fun packageFallback(pkg: String): Boolean {
+        val p = pkg.lowercase()
+        return p.startsWith("com.oculus") || p.startsWith("com.meta.")
     }
 }
