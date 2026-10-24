@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.example.questtuner.tuner.SecureAutomation
@@ -51,11 +53,11 @@ fun SetupWizard(state: UiState, viewModel: TunerViewModel) {
                             style = MaterialTheme.typography.bodySmall)
                     }
                     Text("以下自动化默认关闭，按需开启（随时可在「自动化与增强」中更改）：")
-                    // 复用 AutomationCard 的开关语义，向导内直接勾选
-                    WizardSwitch("连接时自动开启无线调试", state.autoWifiAdb) { viewModel.setAutoWifiAdb(it) }
-                    WizardSwitch("自动启用无障碍服务", state.autoA11y) { viewModel.setAutoA11y(it) }
-                    WizardSwitch("按前台应用自动应用 Profile", state.autoApply) { viewModel.setAutoApply(it) }
-                    WizardSwitch("开机恢复默认参数", state.restoreOnBoot) { viewModel.setRestoreOnBoot(it) }
+                    // R4-O5：向导开关门槛与 AutomationCard 语义统一（autoApply 门禁 = a11yRunning）
+                    WizardSwitch("连接时自动开启无线调试", state.autoWifiAdb, state.hasSecureGrant) { viewModel.setAutoWifiAdb(it) }
+                    WizardSwitch("自动启用无障碍服务", state.autoA11y, state.hasSecureGrant) { viewModel.setAutoA11y(it) }
+                    WizardSwitch("按前台应用自动应用 Profile", state.autoApply, state.a11yRunning) { viewModel.setAutoApply(it) }
+                    WizardSwitch("开机恢复默认参数", state.restoreOnBoot, state.hasSecureGrant) { viewModel.setRestoreOnBoot(it) }
                 }
             }
         },
@@ -74,11 +76,15 @@ fun SetupWizard(state: UiState, viewModel: TunerViewModel) {
 }
 
 @Composable
-private fun WizardSwitch(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(),
+private fun WizardSwitch(label: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            // BUG-033：整行可点 + Switch 语义（与 AutomationCard.SwitchRow 统一）
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically) {
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(label, Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
