@@ -51,35 +51,42 @@ object TuningExecutor {
 
     suspend fun runCommand(cmd: String): String? = withContext(Dispatchers.IO) {
         val conn = connection ?: return@withContext null
-        val r = adbMutex.withLock { conn.shell(cmd) }
-        if (r.isSuccess) r.getOrNull() else {
-            lastError = r.exceptionOrNull()?.message
-            // shell 失败大概率是连接已死（IOException）——关闭并置空，允许重连
-            if (r.exceptionOrNull() is java.io.IOException) {
-                conn.close()
-                connection = null
-            }
-            null
-        }
+        // 追加退出码探针：stdout 末尾出现 "EXIT:0" 才算命令成功
+        val r = adbMutex.withLock { conn.shell("$cmd; echo EXIT:$?") }
+        interpretShellResult(conn, r)
     }
 
     suspend fun runCommands(cmds: List<String>): Boolean = withContext(Dispatchers.IO) {
         adbMutex.withLock {
-            cmds.all { runCommandLocked(conn = connection ?: return@withLock false, cmd = it) != null }
+            val conn = connection ?: return@withLock false
+            cmds.all { interpretShellResult(conn, conn.shell("$it; echo EXIT:$?")) != null }
         }
     }
 
-    /** 必须在持有 adbMutex 时调用 */
-    private fun runCommandLocked(conn: AdbConnection, cmd: String): String? {
-        val r = conn.shell(cmd)
-        if (r.isSuccess) return r.getOrNull()
-        lastError = r.exceptionOrNull()?.message
-        // 连接级失败（IOException）时清理死连接，允许重连
-        if (r.exceptionOrNull() is java.io.IOException) {
-            conn.close()
-            if (connection === conn) connection = null
+    /** 解析 shell 结果：剥离 EXIT 探针、校验退出码；IOException 视为连接已死并清理。必须持有 adbMutex。 */
+    private fun interpretShellResult(conn: AdbConnection, r: Result<String>): String? {
+        if (r.isFailure) {
+            val e = r.exceptionOrNull()
+            lastError = e?.message
+            if (e is java.io.IOException) {
+                conn.close()
+                if (connection === conn) connection = null
+            }
+            return null
         }
-        return null
+        val out = r.getOrNull() ?: return null
+        // 取最后一次出现的 "EXIT:" 行
+        val exitMark = out.lastIndexOf("EXIT:")
+        if (exitMark < 0) {
+            lastError = "no exit marker; output: ${out.take(200)}"
+            return null
+        }
+        val code = out.substring(exitMark + 5).trim().toIntOrNull()
+        if (code != 0) {
+            lastError = "exit=$code: ${out.substring(0, exitMark).take(300)}"
+            return null
+        }
+        return out.substring(0, exitMark).trimEnd('\n')
     }
 
     fun disconnect() {
