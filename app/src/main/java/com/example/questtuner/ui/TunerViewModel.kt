@@ -51,7 +51,8 @@ data class UiState(
 class TunerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ProfileRepository.of(app.filesDir)
-    private val _state = MutableStateFlow(UiState())
+    // R4-O3：wizardVisible 构造时同步读 prefs（SP 首读开销可忽略），消除「主界面闪现再弹向导」
+    private val _state = MutableStateFlow(UiState(wizardVisible = !prefs.firstRunDone))
     val state: StateFlow<UiState> = _state
     private val prefs = TunerPrefs.get(app)
     private var pendingRelease: SelfUpdater.ReleaseInfo? = null
@@ -63,19 +64,16 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             val ps = withContext(Dispatchers.IO) { repo.profiles() }
             _state.value = _state.value.copy(
                 profiles = ps,
-                hasSecureGrant = SecureAutomation.hasWriteSecureSettings(app),
                 autoWifiAdb = prefs.autoWifiAdb,
                 autoA11y = prefs.autoA11y,
                 autoApply = prefs.autoApplyProfile,
                 restoreOnBoot = prefs.restoreOnBoot,
-                a11yRunning = SecureAutomation.isA11yRunning(app),
-                wizardVisible = !prefs.firstRunDone,
                 metricsOverlay = prefs.metricsOverlay,
                 metricsGraph = prefs.metricsGraph,
                 metricsStat = prefs.metricsStat,
-                privateDnsMode = PrivateDns.currentMode(app),
             )
         }
+        refreshCapabilities()   // BUG-029：取代原 init 一次性能力快照
         viewModelScope.launch {
             SelfUpdater.installResult.collect { r ->
                 if (r != null) {
@@ -100,6 +98,29 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * BUG-029：能力快照重探测（onStart / 向导步骤切换 / init 三处触发）。
+     * BUG-030 对账：autoA11y 开关 ON 且已授权但服务未运行 → 自动补执行 enable（一次，结果如实回填）。
+     */
+    fun refreshCapabilities() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val grant = SecureAutomation.hasWriteSecureSettings(app)
+            var running = SecureAutomation.isA11yRunning(app)
+            // BUG-030 对账：持久 ON + 授权在 + 服务未运行 → 补启用（对照 autoWifiAdb 每次 connect 活读的自然对账）
+            if (grant && prefs.autoA11y && !running) {
+                if (SecureAutomation.enableA11yService(app) is SecureAutomation.CapProbe.Ok) {
+                    running = SecureAutomation.waitA11yRunning(app)
+                }
+            }
+            _state.value = _state.value.copy(
+                hasSecureGrant = grant,
+                a11yRunning = running,
+                privateDnsMode = PrivateDns.currentMode(app),
+            )
         }
     }
 

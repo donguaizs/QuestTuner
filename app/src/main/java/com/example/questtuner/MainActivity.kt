@@ -18,4 +18,10 @@ class MainActivity : ComponentActivity() {
             TunerApp(viewModel = viewModel)
         }
     }
+
+    override fun onStart() {
+        super.onStart()
+        // BUG-029：回到前台重探测能力快照（PC 授权后返回、戴回头显等旅程）
+        viewModel.refreshCapabilities()
+    }
 }

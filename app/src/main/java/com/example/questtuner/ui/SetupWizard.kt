@@ -61,7 +61,11 @@ fun SetupWizard(state: UiState, viewModel: TunerViewModel) {
         },
         confirmButton = {
             if (step == 1) {
-                TextButton(onClick = { step = 2 }) { Text("下一步") }
+                TextButton(onClick = {
+                    // BUG-029：用户按指引完成授权后进入第二步——此刻重探测（确定性兜底，不依赖生命周期）
+                    viewModel.refreshCapabilities()
+                    step = 2
+                }) { Text("下一步") }
             } else {
                 TextButton(onClick = viewModel::dismissWizard) { Text("开始使用") }
             }
