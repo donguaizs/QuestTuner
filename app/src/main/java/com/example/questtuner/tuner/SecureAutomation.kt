@@ -8,6 +8,7 @@ import android.provider.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /** WRITE_SECURE_SETTINGS 自动化：每个操作 = 尝试 + 回读探测，结果用 CapProbe 如实返回。 */
 object SecureAutomation {
@@ -138,27 +139,36 @@ object SecureAutomation {
     }
 
     // ---- 组合入口：P0-A 主路径（VM 与无障碍服务共用） ----
-    // 假设A3：写入后 adbd 数秒内就绪 → 重试连接（最多 4 次、间隔 1.5s；TCP 拒连是快速失败）
-    // 失败：返回 false，note 带降级原因
+    // 假设A3：写入后 adbd 数秒内就绪 → 重试连接（拒连是快速失败）
+    // BUG-026：总闸 60s + 分类短路——AUTH 等待超时（adbd 在等用户确认）不重试，立即给指引
     suspend fun ensureWifiAdbThenConnect(
         context: Context,
         onNote: (String) -> Unit = {},
     ): Boolean = withContext(Dispatchers.IO) {
-        val prefs = TunerPrefs.get(context)
-        if (prefs.autoWifiAdb && hasWriteSecureSettings(context)) {
-            when (val r = enableWifiAdb(context)) {
-                is CapProbe.Ok -> onNote("已自动开启无线调试，等待 adbd…")
-                is CapProbe.NoPermission -> onNote("未授权，走手动流程")
-                is CapProbe.WriteRejected -> onNote("无线调试写入被固件拒绝，请手动开启")
-                is CapProbe.Error -> onNote("无线调试自动开启失败(${r.message})，请手动开启")
+        // 总闸：拒连重试 4×快速 + 单次 AUTH 35s 均在 60s 内完成；超总闸=失败
+        withTimeout(60_000L) {
+            val prefs = TunerPrefs.get(context)
+            if (prefs.autoWifiAdb && hasWriteSecureSettings(context)) {
+                when (val r = enableWifiAdb(context)) {
+                    is CapProbe.Ok -> onNote("已自动开启无线调试，等待 adbd…")
+                    is CapProbe.NoPermission -> onNote("未授权，走手动流程")
+                    is CapProbe.WriteRejected -> onNote("无线调试写入被固件拒绝，请手动开启")
+                    is CapProbe.Error -> onNote("无线调试自动开启失败(${r.message})，请手动开启")
+                }
             }
+            // 无论自动化成功与否都继续尝试连接（用户可能本来就手动开着）
+            repeat(4) { attempt ->
+                if (TuningExecutor.ensureConnected(context)) return@withTimeout true
+                // 分类短路：非拒连失败（AUTH 等待超时/链路异常）重试无意义——
+                // adbd 在等用户在头显上确认授权，立即把指引给出来
+                if (!TuningExecutor.lastErrorIsRefused()) {
+                    onNote("adbd 未确认授权：请在头显上点击「允许 USB 调试」，或检查无线调试状态")
+                    return@withTimeout false
+                }
+                if (attempt < 3) delay(1_500)
+            }
+            false
         }
-        // 无论自动化成功与否都继续尝试连接（用户可能本来就手动开着）
-        repeat(4) { attempt ->
-            if (TuningExecutor.ensureConnected(context)) return@withContext true
-            if (attempt < 3) delay(1_500)
-        }
-        false
     }
 
     // ---- 纯函数（可单测）：合并无障碍服务列表 ----

@@ -21,6 +21,14 @@ object TuningExecutor {
     @Volatile var lastError: String? = null
         private set
 
+    /**
+     * 最近一次连接失败是否为 TCP 拒绝（adbd 未监听）——BUG-026 重试分类用（A11）；
+     * 其他失败（AUTH 超时/链路异常）不重试。分类失败（无法判断）按可重试处理，不劣化现状。
+     */
+    @Volatile private var lastFailureWasRefused: Boolean = false
+
+    fun lastErrorIsRefused(): Boolean = lastFailureWasRefused
+
     /** 连接实态（服务侧重连/意外断开后 UI 同步用，BUG-027 / O10 根因） */
     private val _connectionState = MutableStateFlow(false)
     val connectionState: StateFlow<Boolean> = _connectionState
@@ -66,9 +74,13 @@ object TuningExecutor {
             connection = conn
             _connectionState.value = true
             lastError = null
+            lastFailureWasRefused = false
             true
         } else {
-            lastError = result.exceptionOrNull()?.message ?: "connect failed"
+            val e = result.exceptionOrNull()
+            lastError = e?.message ?: "connect failed"
+            // A11：拒连=adbd 未就绪（可重试）；超时/IOException=AUTH 等待或链路问题（不重试）
+            lastFailureWasRefused = e is java.net.ConnectException
             conn.close()
             false
         }

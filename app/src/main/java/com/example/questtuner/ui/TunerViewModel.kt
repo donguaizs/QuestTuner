@@ -53,6 +53,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<UiState> = _state
     private val prefs = TunerPrefs.get(app)
     private var pendingRelease: SelfUpdater.ReleaseInfo? = null
+    /** BUG-026：connecting 态的连接协程，支持取消 */
+    private var connectJob: kotlinx.coroutines.Job? = null
 
     init {
         viewModelScope.launch {
@@ -102,7 +104,7 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     fun connect() {
         if (_state.value.connecting) return
         _state.value = _state.value.copy(connecting = true, adbStatus = "连接中…")
-        viewModelScope.launch {
+        connectJob = viewModelScope.launch {
             val ok = SecureAutomation.ensureWifiAdbThenConnect(getApplication()) { note ->
                 _state.value = _state.value.copy(adbStatus = note)
             }
@@ -127,6 +129,16 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+    }
+
+    /** BUG-026：connecting 态的取消入口 */
+    fun cancelConnect() {
+        connectJob?.cancel()
+        connectJob = null
+        _state.value = _state.value.copy(
+            connecting = false,
+            adbStatus = "已取消连接（可重新点连接）",
+        )
     }
 
     fun disconnect() {
