@@ -4,6 +4,7 @@
     <!-- Quest 3 是平板级大屏设备 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- 无界面系统服务无需 launcher activity；但为了调试便利仍提供主入口 -->
     <application
@@ -39,5 +40,11 @@
         </service>
 
         <receiver android:name=".update.InstallResultReceiver" android:exported="false" />
+
+        <receiver android:name=".tuner.BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import com.example.questtuner.tuner.OvrMetrics
 import com.example.questtuner.tuner.SecureAutomation
 
 /** 自动化与增强：每个能力独立开关（默认关），探测结果如实展示，失败给手动路径。 */
@@ -95,5 +96,54 @@ private fun SwitchRow(
             Text(note, style = MaterialTheme.typography.bodySmall)
         }
         Switch(checked = checked, onCheckedChange = if (enabled) onChange else null)
+    }
+}
+
+@Composable
+private fun OvrMetricsSection(state: UiState, viewModel: TunerViewModel) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    Text("OVR Metrics 性能叠加层", style = MaterialTheme.typography.bodyMedium)
+    if (!OvrMetrics.isAvailable(ctx)) {
+        // 确定探测失败：目标包不存在 → 整块禁用并说明
+        Text("未检测到 OVR Metrics 服务（com.oculus.ovrmonitormetricsservice），功能不可用。",
+            style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    // 假设A7：键名未验证；文案如实告知效果无法在应用内确认
+    Text("通过系统广播控制（与 QGO 同源）。已发送的开关无法在应用内确认效果，请直接观察头显内的叠加层。",
+        style = MaterialTheme.typography.bodySmall)
+    SwitchRow("Overlay 叠加层", "广播开关", state.metricsOverlay, true) {
+        viewModel.setMetricsOverlay(it)
+    }
+    SwitchRow("Graph 曲线图", "广播开关", state.metricsGraph, true) {
+        viewModel.setMetricsGraph(it)
+    }
+    SwitchRow("Stat 统计面板", "广播开关", state.metricsStat, true) {
+        viewModel.setMetricsStat(it)
+    }
+    OutlinedButton(onClick = { viewModel.resendMetrics() }) { Text("重新发送全部开关") }
+}
+
+@Composable
+private fun PrivateDnsSection(state: UiState, viewModel: TunerViewModel) {
+    var host by remember { mutableStateOf("") }
+    Text("Private DNS（可选）", style = MaterialTheme.typography.bodyMedium)
+    if (!state.hasSecureGrant) {
+        Text("需一次性授权后可用（见上方命令）。", style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    Text("当前模式: ${state.privateDnsMode ?: "未知"}。错误的 DNS 主机名会导致联网异常。",
+        style = MaterialTheme.typography.bodySmall)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = host, onValueChange = { host = it },
+            placeholder = { Text("dns.example.com") },
+            singleLine = true, modifier = Modifier.weight(1f),
+        )
+        Button(onClick = { viewModel.setPrivateDns(host) }, enabled = host.isNotBlank()) {
+            Text("应用")
+        }
+        OutlinedButton(onClick = viewModel::privateDnsOff) { Text("关闭") }
     }
 }

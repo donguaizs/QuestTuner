@@ -7,6 +7,7 @@ import com.example.questtuner.tuner.AppProfile
 import com.example.questtuner.tuner.AppScanner
 import com.example.questtuner.tuner.InstalledApp
 import com.example.questtuner.tuner.PrivateDns
+import com.example.questtuner.tuner.OvrMetrics
 import com.example.questtuner.tuner.ProfileRepository
 import com.example.questtuner.tuner.SecureAutomation
 import com.example.questtuner.tuner.TunerCommands
@@ -178,6 +179,48 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissWizard() {
         prefs.firstRunDone = true
         _state.value = _state.value.copy(wizardVisible = false)
+    }
+
+    // ---- P2-1 OVR Metrics ----
+
+    fun setMetricsOverlay(v: Boolean) { prefs.metricsOverlay = v; resendMetrics() }
+    fun setMetricsGraph(v: Boolean) { prefs.metricsGraph = v; resendMetrics() }
+    fun setMetricsStat(v: Boolean) { prefs.metricsStat = v; resendMetrics() }
+    fun resendMetrics() {
+        viewModelScope.launch(Dispatchers.IO) {
+            OvrMetrics.applyState(
+                getApplication(), prefs.metricsOverlay, prefs.metricsGraph, prefs.metricsStat)
+        }
+    }
+
+    // ---- P2-2 Private DNS ----
+
+    fun setPrivateDns(host: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val r = PrivateDns.setHostname(getApplication(), host)
+            withContext(Dispatchers.Main) {
+                _state.value = _state.value.copy(
+                    privateDnsMode = PrivateDns.currentMode(getApplication()),
+                    adbStatus = when (r) {
+                        PrivateDns.DnsResult.Ok -> "Private DNS 已设置为 $host"
+                        is PrivateDns.DnsResult.Rejected -> "Private DNS 设置失败已还原: ${r.detail}"
+                        PrivateDns.DnsResult.NoPermission -> "未授权，Private DNS 不可用"
+                    },
+                )
+            }
+        }
+    }
+
+    fun privateDnsOff() {
+        viewModelScope.launch(Dispatchers.IO) {
+            PrivateDns.off(getApplication())
+            withContext(Dispatchers.Main) {
+                _state.value = _state.value.copy(
+                    privateDnsMode = PrivateDns.currentMode(getApplication()),
+                    adbStatus = "Private DNS 已关闭",
+                )
+            }
+        }
     }
 
     fun refreshStatus() {
