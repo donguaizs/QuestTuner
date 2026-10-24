@@ -139,6 +139,17 @@ object SelfUpdater {
         return File(File(context.getExternalFilesDir(null), "update"), "questtuner-$tag.apk")
     }
 
+    /** R4-O1：清理 update/ 目录中非当前 tag 的陈旧 APK（跨版本残留不累积；纯文件操作） */
+    fun cleanStaleApks(context: Context, keepTag: String) {
+        runCatching {
+            val keep = "questtuner-$keepTag.apk"
+            val dir = File(context.getExternalFilesDir(null), "update")
+            dir.listFiles()?.forEach { f ->
+                if (f.isFile && f.name != keep) f.delete()
+            }
+        }
+    }
+
     // ---- 3) 四重校验（任一失败拒绝安装并删文件） ----
     suspend fun verifyApk(context: Context, f: File): Result<Unit> =
         withContext(Dispatchers.IO) {

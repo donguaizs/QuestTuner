@@ -69,9 +69,14 @@ fun AppPickerDialog(
                         OutlinedButton(onClick = onRefresh) { Text("加载应用列表") }
                     }
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        items(filtered, key = { it.packageName }) { app ->
-                            AppPickerRow(app) { onSelect(app) }
+                    // R4-O8：搜索无结果显示占位，不再空白
+                    if (filtered.isEmpty()) {
+                        Text("无匹配应用", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            items(filtered, key = { it.packageName }) { app ->
+                                AppPickerRow(app) { onSelect(app) }
+                            }
                         }
                     }
                 }

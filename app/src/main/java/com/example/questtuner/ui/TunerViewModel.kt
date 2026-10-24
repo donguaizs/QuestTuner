@@ -166,6 +166,12 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             connecting = false,
             adbStatus = "已取消连接（可重新点连接）",
         )
+        // R4-O2 收尾兜底：取消后即使阻塞读晚到完成连接，也被关闭且会话不激活
+        //（否则出现「连接活但 sessionActive=false」中间态，服务还会自愈重连违背取消意图）
+        viewModelScope.launch(Dispatchers.IO) {
+            TuningExecutor.markSessionInactive()
+            TuningExecutor.disconnect()
+        }
     }
 
     fun disconnect() {
@@ -427,6 +433,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             _state.value = _state.value.copy(updateStatus = "下载中…", updateProgress = 0)
+            // R4-O1：清理跨版本残留的陈旧 APK
+            SelfUpdater.cleanStaleApks(ctx, info.tag)
             val apk = SelfUpdater.updateApk(ctx, info.tag)
             SelfUpdater.download(info.url, info.size, apk) { p ->
                 _state.value = _state.value.copy(updateProgress = p)
