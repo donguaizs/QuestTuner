@@ -64,9 +64,10 @@ class AdbConnection(
 
     /** Blocking shell; collect output until CLSE. Call from background thread. */
     fun shell(command: String): Result<String> = runCatching {
-        val sb = StringBuilder()
-        shellStreaming(command) { chunk -> sb.append(String(chunk, Charsets.UTF_8)) }
-        sb.toString()
+        // 字节累积 + 一次性 UTF-8 解码，避免多字节字符跨 WRTE 包截断
+        val bytes = java.io.ByteArrayOutputStream()
+        shellStreaming(command) { chunk -> bytes.write(chunk) }
+        bytes.toString("UTF-8")
     }
 
     fun shellStreaming(command: String, onChunk: (ByteArray) -> Unit) {
