@@ -75,7 +75,7 @@ All automation is off by default with independent toggles.
 
 ## Privacy
 
-**Privacy.** The only network behavior is the GitHub Releases API request made when you tap "Check for update" (api.github.com). Profiles, tuning parameters, and the accessibility service (which reads only the foreground app's package name, never screen content) are fully local. No analytics, no tracking, no data upload.
+The only network behavior is the GitHub Releases API request made when you tap "Check for update" (api.github.com). Profiles, tuning parameters, and the accessibility service (which reads only the foreground app's package name, never screen content) are fully local. No analytics, no tracking, no data upload.
 
 ## Important Notes
 
