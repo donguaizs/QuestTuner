@@ -24,6 +24,7 @@ class BootReceiver : BroadcastReceiver() {
         if (!TunerPrefs.get(context).restoreOnBoot) return
         val appContext = context.applicationContext
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            // 独立会话：不 markSessionActive，开机恢复后 autoApply 不自动激活（用户显式连接后激活）
             val ok = runCatching {
                 SecureAutomation.ensureWifiAdbThenConnect(appContext) &&
                     TuningExecutor.runCommands(TuningCommands.resetAll())

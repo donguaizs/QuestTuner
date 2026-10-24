@@ -63,7 +63,7 @@ fun AutomationCard(state: UiState, viewModel: TunerViewModel) {
             ) { viewModel.setAutoA11y(it) }
             SwitchRow(
                 "按前台应用自动应用 Profile",
-                "仅本地监听窗口切换，不上传任何数据；需无障碍服务",
+                "仅本地监听窗口切换，不上传任何数据；需已连接——断开后自动应用暂停，重新连接后恢复",
                 state.autoApply, state.autoA11y || grant,
             ) { viewModel.setAutoApply(it) }
             SwitchRow(

@@ -81,6 +81,22 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+        // BUG-027 / O10：executor 连接实态同步 UI——服务侧重连/意外断开都不再脱节
+        viewModelScope.launch {
+            TuningExecutor.connectionState.collect { live ->
+                if (!live && _state.value.connected) {
+                    _state.value = _state.value.copy(
+                        connected = false,
+                        adbStatus = "连接已断开（autoApply 将在下次前台切换时自动恢复）",
+                    )
+                } else if (live && !_state.value.connected) {
+                    _state.value = _state.value.copy(
+                        connected = true,
+                        adbStatus = "已连接（由自动应用恢复）",
+                    )
+                }
+            }
+        }
     }
 
     fun connect() {
@@ -91,6 +107,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                 _state.value = _state.value.copy(adbStatus = note)
             }
             if (ok) {
+                // BUG-027：用户显式连接成功 → 激活会话（autoApply 服务可工作/自愈）
+                TuningExecutor.markSessionActive()
                 refreshStatus()
                 _state.value = _state.value.copy(
                     connected = true,
@@ -113,6 +131,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun disconnect() {
         viewModelScope.launch(Dispatchers.IO) {
+            // BUG-027：用户显式断开 → 会话结束，autoApply 服务 no-op（在 executor 断开前标记）
+            TuningExecutor.markSessionInactive()
             TuningExecutor.disconnect()
             SecureAutomation.disableWifiAdbIfWeEnabled(getApplication())
             withContext(Dispatchers.Main) {
@@ -249,6 +269,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     fun applyProfile(p: AppProfile) {
         viewModelScope.launch {
             val cmds = p.toCommands()
+            // BUG-020：手动应用 → 代次递增，服务后续 Leave 不回滚用户意志
+            TuningExecutor.bumpManualGeneration()
             val ok = TuningExecutor.runCommands(cmds)
             val sb = StringBuilder()
             sb.append("应用 ${p.label ?: p.packageName} ")
@@ -291,6 +313,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resetAll() {
         viewModelScope.launch {
+            // BUG-020：手动恢复默认 → 代次递增
+            TuningExecutor.bumpManualGeneration()
             val ok = TuningExecutor.runCommands(TuningCommands.resetAll())
             _state.value = _state.value.copy(
                 lastCommandOutput = if (ok) "已恢复默认" else "失败: ${TuningExecutor.lastError}"
