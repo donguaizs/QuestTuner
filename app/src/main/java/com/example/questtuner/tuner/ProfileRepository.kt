@@ -32,9 +32,10 @@ class ProfileRepository(file: File) {
 
     @Synchronized
     fun reload() {
-        all.clear()
         if (store.exists()) {
-            runCatching {
+            // 先解析到局部变量，成功后才替换 all；失败不动 all（保持内存旧值/空表）
+            val parsed = LinkedHashMap<String, AppProfile>()
+            val ok = runCatching {
                 val arr = JSONArray(store.readText())
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
@@ -47,8 +48,15 @@ class ProfileRepository(file: File) {
                         cpuLevel = o.optInt("cpuLevel", -1).takeIf { it >= 0 },
                         gpuLevel = o.optInt("gpuLevel", -1).takeIf { it >= 0 },
                     )
-                    all[p.packageName] = p
+                    parsed[p.packageName] = p
                 }
+            }.isSuccess
+            if (ok) {
+                all.clear()
+                all.putAll(parsed)
+            } else {
+                // 解析失败：保留旧文件与内存现状，记日志（不覆盖、不清空）
+                android.util.Log.w("ProfileRepository", "profiles.json corrupted, keep ${all.size} in-memory")
             }
         }
     }
@@ -83,7 +91,14 @@ class ProfileRepository(file: File) {
             arr.put(o)
         }
         store.parentFile?.mkdirs()
-        store.writeText(arr.toString(2))
+        // 临时文件 + renameTo 原子替换，避免写一半被杀留下半截 JSON
+        val tmp = File(store.parentFile, store.name + ".tmp")
+        tmp.writeText(arr.toString(2))
+        if (!tmp.renameTo(store)) {
+            // 极少数文件系统 rename 失败（目标被占用等）回退直接写
+            store.writeText(arr.toString(2))
+        }
+        tmp.delete()
     }
 
     companion object {
