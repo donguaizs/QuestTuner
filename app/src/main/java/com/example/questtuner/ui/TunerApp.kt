@@ -40,6 +40,7 @@ fun TunerApp(viewModel: TunerViewModel) {
             items(state.profiles, key = { it.packageName }) { p ->
                 ProfileRow(
                     p,
+                    connected = state.connected,
                     onApply = { viewModel.applyProfile(p) },
                     onDelete = { viewModel.deleteProfile(p.packageName) },
                 )
@@ -107,7 +108,7 @@ fun QuickTuneCard(state: UiState, viewModel: TunerViewModel) {
 }
 
 @Composable
-fun ProfileRow(p: AppProfile, onApply: () -> Unit, onDelete: () -> Unit) {
+fun ProfileRow(p: AppProfile, connected: Boolean, onApply: () -> Unit, onDelete: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
@@ -119,7 +120,7 @@ fun ProfileRow(p: AppProfile, onApply: () -> Unit, onDelete: () -> Unit) {
                 Text(describeProfile(p), style = MaterialTheme.typography.bodySmall)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Button(onClick = onApply) { Text("应用") }
+                Button(onClick = onApply, enabled = connected) { Text("应用") }
                 OutlinedButton(onClick = onDelete) { Text("删除") }
             }
         }
@@ -183,8 +184,7 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
                             gpuLevel = gpu,
                         )
                     )
-                },
-                enabled = state.connected,
+                }
             ) { Text("保存 Profile") }
         }
     }
