@@ -5,6 +5,7 @@ import com.example.questtuner.adb.AdbConnection
 import com.example.questtuner.adb.AdbKeyStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /**
  * 调参执行器：管理 ADB 连接生命周期，串行执行调参命令。
@@ -24,7 +25,12 @@ object TuningExecutor {
             return@withContext false
         }
         val conn = AdbConnection("127.0.0.1", 5555)
-        val result = conn.connect(keyStore)
+        // 略大于 socket soTimeout（30s），双保险；取消/超时/失败路径都关闭 socket
+        val result = runCatching {
+            withTimeout(35_000L) {
+                conn.connect(keyStore).getOrThrow()
+            }
+        }
         if (result.isSuccess) {
             connection = conn
             lastError = null
