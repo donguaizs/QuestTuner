@@ -53,7 +53,7 @@ object TuningCommands {
         "setprop debug.oculus.refreshRate \"\"",
         "setprop debug.oculus.textureWidth \"\"",
         "setprop debug.oculus.textureHeight \"\"",
-        "setprop debug.oculus.textureHeight \"\"",
+        "setprop debug.oculus.highPrecisionPassthrough \"\"",
         "setprop debug.oculus.cpuLevel \"\"",
         "setprop debug.oculus.gpuLevel \"\"",
     )
