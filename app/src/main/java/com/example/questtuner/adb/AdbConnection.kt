@@ -16,6 +16,7 @@ class AdbConnection(
     private val host: String,
     private val port: Int = 5555,
     private val connectTimeoutMs: Int = 5000,
+    private val readTimeoutMs: Int = 30_000,
 ) {
     private var socket: Socket? = null
     private var input: DataInputStream? = null
@@ -29,6 +30,8 @@ class AdbConnection(
             val sock = Socket()
             sock.tcpNoDelay = true
             sock.connect(InetSocketAddress(host, port), connectTimeoutMs)
+            // 读超时：adbd 等待用户在头显上确认授权期间不回包，无 soTimeout 会永久阻塞
+            sock.soTimeout = readTimeoutMs
             socket = sock
             input = DataInputStream(sock.getInputStream().buffered())
             output = DataOutputStream(sock.getOutputStream().buffered())
