@@ -22,6 +22,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.example.questtuner.tuner.AppProfile
 
@@ -203,11 +205,20 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
                 }
             }
             Text("纹理缩放: ${"%.2f".format(scale)}x")
-            Slider(value = scale, onValueChange = { scale = it }, valueRange = 0.5f..2.0f)
+            Slider(
+                value = scale, onValueChange = { scale = it }, valueRange = 0.5f..2.0f,
+                modifier = Modifier.semantics { contentDescription = "纹理缩放" },   // BUG-033
+            )
             Text("CPU: $cpu")
-            Slider(value = cpu.toFloat(), onValueChange = { cpu = it.toInt() }, valueRange = 0f..4f, steps = 3)
+            Slider(
+                value = cpu.toFloat(), onValueChange = { cpu = it.toInt() }, valueRange = 0f..4f, steps = 3,
+                modifier = Modifier.semantics { contentDescription = "CPU 性能等级" },   // BUG-033
+            )
             Text("GPU: $gpu")
-            Slider(value = gpu.toFloat(), onValueChange = { gpu = it.toInt() }, valueRange = 0f..4f, steps = 3)
+            Slider(
+                value = gpu.toFloat(), onValueChange = { gpu = it.toInt() }, valueRange = 0f..4f, steps = 3,
+                modifier = Modifier.semantics { contentDescription = "GPU 性能等级" },   // BUG-033
+            )
             Button(
                 onClick = {
                     val w = (1680 * scale).toInt().coerceAtMost(3072)
