@@ -49,6 +49,7 @@ fun TunerApp(viewModel: TunerViewModel) {
                     p,
                     connected = state.connected,
                     onApply = { viewModel.applyProfile(p) },
+                    onEdit = { viewModel.editProfile(p) },   // R6-O2：编辑入口
                     onDelete = { viewModel.deleteProfile(p.packageName) },
                 )
             }
@@ -122,7 +123,7 @@ fun QuickTuneCard(state: UiState, viewModel: TunerViewModel) {
 }
 
 @Composable
-fun ProfileRow(p: AppProfile, connected: Boolean, onApply: () -> Unit, onDelete: () -> Unit) {
+fun ProfileRow(p: AppProfile, connected: Boolean, onEdit: () -> Unit, onApply: () -> Unit, onDelete: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
@@ -135,6 +136,7 @@ fun ProfileRow(p: AppProfile, connected: Boolean, onApply: () -> Unit, onDelete:
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Button(onClick = onApply, enabled = connected) { Text("应用") }
+                OutlinedButton(onClick = onEdit) { Text("编辑") }
                 OutlinedButton(onClick = onDelete) { Text("删除") }
             }
         }
@@ -153,15 +155,65 @@ private fun describeProfile(p: AppProfile): String = buildString {
 
 @Composable
 fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
-    var pkg by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
-    var hz by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(90) }
-    var scale by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(1.0f) }
-    var cpu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(2) }
-    var gpu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(2) }
-    var pickedLabel by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
-    // BUG-031：选择器所选包名：pickedLabel 的有效期锚点
-    var pickedPkg by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    val edit = state.editingProfile
+    // BUG-041：remember(edit) 键控——编辑对象变化（进编辑/换编辑目标/退出）时全部字段重置
+    var pkg by androidx.compose.runtime.remember(edit) {
+        androidx.compose.runtime.mutableStateOf(edit?.packageName ?: "")
+    }
+    var hz by androidx.compose.runtime.remember(edit) {
+        androidx.compose.runtime.mutableStateOf(edit?.refreshRate ?: 90)
+    }
+    // 编辑模式 scale 反推：原 1680→1.0x、3072→~1.83x，coerce 兜住超域历史值
+    var scale by androidx.compose.runtime.remember(edit) {
+        androidx.compose.runtime.mutableStateOf(
+            ((edit?.textureWidth ?: 1680) / 1680f).coerceIn(0.5f, 2.0f))
+    }
+    var cpu by androidx.compose.runtime.remember(edit) { androidx.compose.runtime.mutableStateOf(edit?.cpuLevel ?: 2) }
+    var gpu by androidx.compose.runtime.remember(edit) { androidx.compose.runtime.mutableStateOf(edit?.gpuLevel ?: 2) }
+    // pickedPkg/pickedLabel：编辑模式锚定为编辑对象（label 沿用原值）
+    var pickedPkg by androidx.compose.runtime.remember(edit) { androidx.compose.runtime.mutableStateOf(edit?.packageName) }
+    var pickedLabel by androidx.compose.runtime.remember(edit) { androidx.compose.runtime.mutableStateOf(edit?.label) }
     var showPicker by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    // BUG-041：包名校验错误（行内红字）与覆盖确认对话框
+    var pkgError by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var confirmOverwrite by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+    /** 保存动作（终检通过后调用；label 终检逻辑沿用 BUG-031 的 pickedPkg 锚点） */
+    fun doSave(targetPkg: String) {
+        val w = (1680 * scale).toInt().coerceAtMost(3072)
+        val h = (1760 * scale).toInt().coerceAtMost(3200)
+        // BUG-031/R4-O6：label 只在包名仍等于选择器所选时采用（防御性终检）
+        val label = (if (pkg == pickedPkg) pickedLabel else null) ?: pkg.ifBlank { "全局" }
+        viewModel.saveProfile(
+            AppProfile(
+                packageName = targetPkg,
+                label = label,
+                refreshRate = hz,
+                textureWidth = w,
+                textureHeight = h,
+                cpuLevel = cpu,
+                gpuLevel = gpu,
+            )
+        )
+    }
+
+    if (confirmOverwrite) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmOverwrite = false },
+            title = { Text("覆盖确认") },
+            text = { Text("已存在 ${pkg.ifBlank { "全局" }} 的配置，保存将覆盖旧值。") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    confirmOverwrite = false
+                    doSave(pkg.ifBlank { "global" })
+                }) { Text("覆盖保存") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmOverwrite = false }) { Text("取消") }
+            },
+        )
+    }
+
     if (showPicker) {
         AppPickerDialog(
             apps = state.apps,
@@ -178,6 +230,12 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
     }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // BUG-041：编辑模式标题与取消入口
+            Text(if (edit != null) "编辑 Profile：${edit.label ?: edit.packageName}" else "新建 Profile",
+                style = MaterialTheme.typography.titleSmall)
+            if (edit != null) {
+                androidx.compose.material3.TextButton(onClick = viewModel::cancelEdit) { Text("取消编辑") }
+            }
             Text("包名", style = MaterialTheme.typography.labelSmall)
             androidx.compose.material3.OutlinedTextField(
                 value = pkg,
@@ -185,9 +243,12 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
                     pkg = it
                     // BUG-031：手改包名 → 与选择器所选不一致 → 陈旧 label 立即失效
                     if (it != pickedPkg) pickedLabel = null
+                    // 输入变化即清除上一轮校验错误
+                    pkgError = null
                 },
                 placeholder = { Text("com.example.app（留空=全局）") },
                 singleLine = true,
+                isError = pkgError != null,   // R6-O1：失焦/终检错误联动 isError
             )
             OutlinedButton(onClick = {
                 // O4：appsLoading 防重复（loadApps 内也有守卫，此处避免无谓触发）
@@ -221,23 +282,23 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
             )
             Button(
                 onClick = {
-                    val w = (1680 * scale).toInt().coerceAtMost(3072)
-                    val h = (1760 * scale).toInt().coerceAtMost(3200)
-                    // BUG-031/R4-O6：label 只在包名仍等于选择器所选时采用（防御性终检）
-                    val label = (if (pkg == pickedPkg) pickedLabel else null) ?: pkg.ifBlank { "全局" }
-                    viewModel.saveProfile(
-                        AppProfile(
-                            packageName = pkg.ifBlank { "global" },
-                            label = label,
-                            refreshRate = hz,
-                            textureWidth = w,
-                            textureHeight = h,
-                            cpuLevel = cpu,
-                            gpuLevel = gpu,
-                        )
-                    )
+                    val targetPkg = pkg.ifBlank { "global" }
+                    // BUG-041/R6-O1：保存前包名终检
+                    pkgError = viewModel.precheckSave(targetPkg)
+                    if (pkgError != null) return@Button
+                    // BUG-041：新建模式 + 同包名已存在 → 覆盖确认（编辑模式 = 明确意图，不确认）
+                    if (edit == null && viewModel.profileExists(targetPkg)) {
+                        confirmOverwrite = true
+                    } else {
+                        doSave(targetPkg)
+                    }
                 }
-            ) { Text("保存 Profile") }
+            ) { Text(if (edit != null) "保存修改" else "保存 Profile") }
+            // 行内错误提示（包名校验）
+            pkgError?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }

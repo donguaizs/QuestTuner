@@ -45,6 +45,8 @@ data class UiState(
     val updateAvailable: Boolean = false,
     val updateStatus: String = "",
     val updateChecking: Boolean = false,   // O7：检查更新防重入
+    // ---- round-6 ----
+    val editingProfile: AppProfile? = null,   // BUG-041：非 null = NewProfileCard 编辑模式
 )
 
 class TunerViewModel(app: Application) : AndroidViewModel(app) {
@@ -366,10 +368,36 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                 repo.save(p)
                 repo.profiles()
             }.let { ps ->
-                _state.value = _state.value.copy(profiles = ps)
+                _state.value = _state.value.copy(
+                    profiles = ps,
+                    // BUG-041：编辑模式保存完成 → 退出编辑态（remember(null) 重置回新建默认）
+                    editingProfile = null,
+                )
             }
         }
     }
+
+    // ---- BUG-041：编辑模式与保存前置校验 ----
+
+    /** R6-O2：进入编辑模式（NewProfileCard 预填） */
+    fun editProfile(p: AppProfile) {
+        _state.value = _state.value.copy(editingProfile = p)
+    }
+
+    fun cancelEdit() {
+        _state.value = _state.value.copy(editingProfile = null)
+    }
+
+    /** 保存前置检查——包名非法返回错误文案；合法返回 null */
+    fun precheckSave(pkg: String): String? {
+        if (!ProfileRepository.isValidPackageName(pkg)) {
+            return "包名格式不正确（示例 com.example.app，或留空作为全局）"
+        }
+        return null
+    }
+
+    /** 同包名是否已存在（内存 LinkedHashMap 查表，无 IO，主线程可接受） */
+    fun profileExists(pkg: String): Boolean = repo.find(pkg) != null
 
     fun deleteProfile(pkg: String) {
         viewModelScope.launch {

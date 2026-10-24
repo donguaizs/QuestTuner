@@ -12,8 +12,12 @@ android {
         applicationId = "com.example.questtuner"
         minSdk = 32        // Quest 3 出厂 Android 12L (API 32)
         targetSdk = 32     // 保持 32：避免较新 Android 的后台执行限制
-        versionCode = 2
-        versionName = "0.2.0"
+        // 发布恒等式（BUG-043 教训：tag 与内嵌版本脱节 → 自更新同版本循环）：
+        //   git tag 名 == "v" + versionName；打 tag 前必须先改本处两个值。
+        //   例：versionName 0.2.2 → tag v0.2.2 → Release APK 内嵌 0.2.2(3)。
+        //   SelfUpdater 防降级比较用 versionName（SelfUpdater.kt versionGreaterThan）。
+        versionCode = 3
+        versionName = "0.2.2"
         // BUG-033（lead 决策）：中文单语产品 + 依赖库资源裁剪（保留 zh 与库默认 en，剥离其余 locale）
         resourceConfigurations.addAll(listOf("zh", "en"))
     }
