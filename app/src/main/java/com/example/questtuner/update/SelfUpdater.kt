@@ -105,22 +105,25 @@ object SelfUpdater {
         File(File(context.getExternalFilesDir(null), "update"), "questtuner-$tag.apk")
 
     // ---- 3) 四重校验（任一失败拒绝安装并删文件） ----
-    fun verifyApk(context: Context, f: File): Result<Unit> = runCatching {
-        val pm = context.packageManager
-        val archive = pm.getPackageArchiveInfo(f.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
-            ?: error("下载的 APK 无法解析（可能损坏）")
-        check(archive.packageName == context.packageName) { "包名不匹配: ${archive.packageName}" }
-        val newSigs = archive.signingInfo?.apkContentsSigners ?: error("APK 无签名信息")
-        val installed = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
-        val oldSigs = installed.signingInfo?.apkContentsSigners ?: error("无法读取已安装签名")
-        check(newSigs.size == oldSigs.size &&
-            newSigs.zip(oldSigs).all { (a, b) -> a.toByteArray().contentEquals(b.toByteArray()) }) {
-            "签名证书不一致，拒绝安装"
+    suspend fun verifyApk(context: Context, f: File): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val pm = context.packageManager
+                val archive = pm.getPackageArchiveInfo(f.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
+                    ?: error("下载的 APK 无法解析（可能损坏）")
+                check(archive.packageName == context.packageName) { "包名不匹配: ${archive.packageName}" }
+                val newSigs = archive.signingInfo?.apkContentsSigners ?: error("APK 无签名信息")
+                val installed = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                val oldSigs = installed.signingInfo?.apkContentsSigners ?: error("无法读取已安装签名")
+                check(newSigs.size == oldSigs.size &&
+                    newSigs.zip(oldSigs).all { (a, b) -> a.toByteArray().contentEquals(b.toByteArray()) }) {
+                    "签名证书不一致，拒绝安装"
+                }
+                check(versionGreaterThan(archive.versionName ?: "", currentVersionName(context))) {
+                    "版本不高于当前，拒绝降级安装"
+                }
+            }
         }
-        check(versionGreaterThan(archive.versionName ?: "", currentVersionName(context))) {
-            "版本不高于当前，拒绝降级安装"
-        }
-    }
 
     // ---- 4) 安装（含 canRequestPackageInstalls 门禁） ----
     // 假设A6：Quest 弹出系统安装确认界面
@@ -138,25 +141,35 @@ object SelfUpdater {
         runCatching { context.startActivity(i) }
     }
 
-    fun install(context: Context, apk: File) {
-        val installer = context.packageManager.packageInstaller
-        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-        // openSession(Int) 接 sessionId：先 createSession(params) 再 openSession(id)
-        val session = installer.openSession(installer.createSession(params))
-        session.openWrite("questtuner", 0, -1).use { out ->
-            apk.inputStream().use { it.copyTo(out) }
-            out.flush()
+    /** BUG-024：install 整体 Result 保护（磁盘满/会话失败不再崩溃）；BUG-023：suspend + IO 执行 */
+    suspend fun install(context: Context, apk: File): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val installer = context.packageManager.packageInstaller
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+                // openSession(Int) 接 sessionId：先 createSession(params) 再 openSession(id)
+                val session = installer.openSession(installer.createSession(params))
+                try {
+                    session.openWrite("questtuner", 0, -1).use { out ->
+                        apk.inputStream().use { it.copyTo(out) }
+                        out.flush()
+                    }
+                    val intent = Intent(context, InstallResultReceiver::class.java)
+                        .putExtra("apk_path", apk.absolutePath)
+                    // PackageInstaller 要求 mutable PendingIntent（系统会填入 status 与确认 Intent）
+                    val pending = android.app.PendingIntent.getBroadcast(
+                        context, 1001, intent,
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE,
+                    )
+                    session.commit(pending.intentSender)
+                } catch (t: Throwable) {
+                    // abandon 后 receiver 收到 STATUS_FAILURE → UI 提示文案正确
+                    runCatching { session.abandon() }
+                    throw t
+                }
+                session.close()
+            }
         }
-        val intent = Intent(context, InstallResultReceiver::class.java)
-            .putExtra("apk_path", apk.absolutePath)
-        // PackageInstaller 要求 mutable PendingIntent（系统会填入 status 与确认 Intent）
-        val pending = android.app.PendingIntent.getBroadcast(
-            context, 1001, intent,
-            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE,
-        )
-        session.commit(pending.intentSender)
-        session.close()
-    }
 
     fun notifyInstallResult(success: Boolean, message: String?) {
         _installResult.value = if (success) "更新安装成功" else "安装失败: ${message ?: "未知错误"}（可用 PC adb install 手动更新）"

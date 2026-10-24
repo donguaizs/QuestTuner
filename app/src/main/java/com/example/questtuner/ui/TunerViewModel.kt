@@ -349,7 +349,13 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                 SelfUpdater.verifyApk(ctx, f).onSuccess {
                     _state.value = _state.value.copy(
                         updateStatus = "校验通过，等待系统确认…", updateProgress = -1)
-                    SelfUpdater.install(ctx, f)
+                    // BUG-024：安装异常（磁盘满/会话失败）→ 状态提示，不再有崩溃路径
+                    SelfUpdater.install(ctx, f).onFailure { e ->
+                        f.delete()
+                        _state.value = _state.value.copy(
+                            updateStatus = "安装失败: ${e.message}（可用 PC adb install 手动更新）",
+                            updateProgress = -1)
+                    }
                 }.onFailure { e ->
                     f.delete()
                     _state.value = _state.value.copy(
