@@ -54,7 +54,7 @@ fun AppPickerDialog(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text("搜索名称或包名") },
+                    placeholder = { Text("搜索名称或包名（支持 com.meta. 前缀）") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )

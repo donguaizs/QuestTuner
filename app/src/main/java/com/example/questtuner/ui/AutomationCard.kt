@@ -37,7 +37,7 @@ fun AutomationCard(state: UiState, viewModel: TunerViewModel) {
             if (!state.hasSecureGrant) {
                 // A1 探测失败：自动化区置灰，展示可复制命令（降级路径的一部分）
                 Text(
-                    "未授予 WRITE_SECURE_SETTINGS（一次性，PC 执行后自动功能可用）。",
+                    "未授予 WRITE_SECURE_SETTINGS（一次性，PC 执行后自动功能可用）。无 PC？核心调参不受影响，可直接跳过；自动应用可在 系统设置 → 无障碍 手动开启本服务后使用。",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 val clip = LocalClipboardManager.current
