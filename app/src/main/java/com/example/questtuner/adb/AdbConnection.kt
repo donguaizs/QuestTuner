@@ -29,6 +29,8 @@ class AdbConnection(
 
     /** CNXN handshake; returns device info string on success. */
     fun connect(keyStore: AdbKeyStore): Result<String> {
+        // BUG-036：同实例二次 connect 防御——旧连接未关闭即重连是调用方错误，快速失败优于静默泄漏
+        check(socket == null) { "connect called on already-connected instance" }
         val info: String = runCatching {
             val sock = Socket()
             sock.tcpNoDelay = true
@@ -49,6 +51,9 @@ class AdbConnection(
                     AdbProtocol.CMD_CNXN -> deviceInfo = String(p.payload, Charsets.UTF_8)
                     AdbProtocol.CMD_AUTH -> when (p.arg1) {
                         AdbProtocol.AUTH_TOKEN -> {
+                            // R5-O4：tokenRounds≥3 时 adbd 仍在发 TOKEN = 未接受签名、
+                            // 等待用户在头显确认 pubkey 授权——每次重发同一 pubkey（幂等），
+                            // rounds 总闸 8 防无限轮换
                             tokenRounds++
                             when (tokenRounds) {
                                 1 -> sendPacket(AdbProtocol.CMD_AUTH, AdbProtocol.AUTH_SIGNATURE, 0,
@@ -66,7 +71,11 @@ class AdbConnection(
                 }
             }
             deviceInfo
-        }.getOrThrow()
+        }.getOrElse { e ->
+            // BUG-036：失败自清理——socket/流字段残留是泄漏面，类自身契约「失败也自己收拾」
+            close()
+            throw e
+        }
         return Result.success(info)
     }
 
@@ -74,7 +83,15 @@ class AdbConnection(
     fun shell(command: String): Result<String> = runCatching {
         // 字节累积 + 一次性 UTF-8 解码，避免多字节字符跨 WRTE 包截断
         val bytes = java.io.ByteArrayOutputStream()
-        shellStreaming(command) { chunk -> bytes.write(chunk) }
+        // BUG-035：累计上限（单包 1MB 检查不覆盖总量）——异常大输出按 IOException 失败，
+        // 走既有失败链（interpretShellResult 对 IOException 清连接；不为超限开特例：
+        // 残留未读数据会破坏后续流解析，关连接是唯一干净处理），防 OOM
+        var total = 0L
+        shellStreaming(command) { chunk ->
+            total += chunk.size
+            if (total > MAX_SHELL_OUTPUT) throw IOException("shell output too large (>8MB): $command")
+            bytes.write(chunk)
+        }
         bytes.toString("UTF-8")
     }
 
@@ -133,5 +150,8 @@ class AdbConnection(
 
     companion object {
         private val CNXN_PAYLOAD = "host::\u0000".toByteArray(Charsets.UTF_8)
+
+        /** BUG-035：shell 输出累计上限——常规输出 <10KB，dumpsys 全量数 MB 仍可用，防异常大输出 OOM */
+        private const val MAX_SHELL_OUTPUT = 8L * 1024 * 1024
     }
 }

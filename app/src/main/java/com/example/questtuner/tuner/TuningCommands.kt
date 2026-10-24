@@ -16,9 +16,6 @@ object TuningCommands {
         "setprop debug.oculus.refreshRate $hz",
     )
 
-    /** 读取当前刷新率 */
-    fun getRefreshRate(): String = "dumpsys display | grep -E 'refreshRate|RenderRate' | head -5"
-
     /**
      * 渲染分辨率缩放（纹理分辨率比例）。
      * QGO 用法：setprop debug.oculus.textureWidth / textureHeight 设定像素预算。
@@ -28,9 +25,6 @@ object TuningCommands {
         "setprop debug.oculus.textureHeight $height",
     )
 
-    fun getResolution(): String =
-        "dumpsys vr | grep -iE 'texture|resolution' | head -8"
-
     /**
      * CPU/GPU 性能等级 (0-4)：
      *   debug.oculus.cpuLevel / gpuLevel
@@ -39,13 +33,6 @@ object TuningCommands {
     fun setCpuGpuLevel(cpu: Int, gpu: Int): List<String> = listOf(
         "setprop debug.oculus.cpuLevel $cpu",
         "setprop debug.oculus.gpuLevel $gpu",
-    )
-
-    fun getCpuGpuLevel(): String = "getprop debug.oculus.cpuLevel; getprop debug.oculus.gpuLevel"
-
-    /** 平滑透视 (Passthrough) 分辨率档位 */
-    fun setPassthroughQuality(hi: Boolean): List<String> = listOf(
-        "setprop debug.oculus.highPrecisionPassthrough ${if (hi) 1 else 0}",
     )
 
     /** 全局默认（清除所有调参属性恢复系统默认） */

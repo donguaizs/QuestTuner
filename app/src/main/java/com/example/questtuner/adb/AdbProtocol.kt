@@ -24,7 +24,7 @@ object AdbProtocol {
     const val AUTH_SIGNATURE = 2
     const val AUTH_RSAPUBLICKEY = 3
 
-    data class Packet(val cmd: Int, val arg0: Int, val arg1: Int, val payload: ByteArray, val crc: Int = 0)
+    data class Packet(val cmd: Int, val arg0: Int, val arg1: Int, val payload: ByteArray)
 
     fun encode(cmd: Int, arg0: Int, arg1: Int, payload: ByteArray): ByteArray {
         val buf = ByteBuffer.allocate(24 + payload.size).order(ByteOrder.LITTLE_ENDIAN)
@@ -36,36 +36,6 @@ object AdbProtocol {
         buf.putInt(cmd.xor(-1))
         buf.put(payload)
         return buf.array()
-    }
-
-    fun decodeHeader(header: ByteArray): Packet {
-        require(header.size == 24) { "header must be 24 bytes" }
-        val bb = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
-        val cmd = bb.int
-        val a0 = bb.int
-        val a1 = bb.int
-        val len = bb.int
-        val crc = bb.int
-        val magic = bb.int
-        require(len in 0..(1 shl 20)) { "bad payload length $len" }
-        require(magic == cmd.xor(-1)) { "magic mismatch" }
-        return Packet(cmd, a0, a1, ByteArray(len).also { /* crc filled by caller */ }, crc)
-    }
-
-    fun verifyCrc(p: Packet, payload: ByteArray = p.payload): Boolean = crc32(payload) == p.crc
-
-    fun decodeFull(header: ByteArray, payload: ByteArray): Packet {
-        val bb = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
-        val cmd = bb.int
-        val a0 = bb.int
-        val a1 = bb.int
-        val len = bb.int
-        val crc = bb.int
-        val magic = bb.int
-        require(len == payload.size) { "length mismatch header=$len actual=${payload.size}" }
-        require(magic == cmd.xor(-1)) { "magic mismatch" }
-        require(crc32(payload) == crc) { "CRC mismatch" }
-        return Packet(cmd, a0, a1, payload)
     }
 
     fun cmdName(cmd: Int): String = when (cmd) {

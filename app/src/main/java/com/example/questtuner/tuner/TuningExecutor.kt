@@ -54,6 +54,10 @@ object TuningExecutor {
     /** UI 侧跨函数竞争防线（applyProfile 中 refreshStatus 等）；AdbConnection 内层锁是最终防线 */
     private val adbMutex = Mutex()
 
+    /**
+     * 纯连接，不触碰无线调试开关——自动开启属 SecureAutomation.ensureWifiAdbThenConnect
+     * （用户显式 connect 流程专用），服务/接收器侧自愈只可用本函数（BUG-027 会话语义）。
+     */
     suspend fun ensureConnected(context: Context): Boolean = withContext(Dispatchers.IO) {
         if (connection != null) return@withContext true
         val keyStore = AdbKeyStore(context)

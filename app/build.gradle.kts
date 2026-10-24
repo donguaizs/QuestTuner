@@ -60,10 +60,10 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
     // ADB 协议实现需要 JSON (CNXN payload) 与 BouncyCastle 不引入，使用 JDK 内置 RSA
+    // BUG-038：已删 lifecycle-runtime-ktx（lifecycleScope/repeatOnLifecycle 零使用）与
+    // datastore-preferences（零使用挂起 5 轮）——viewModelScope 由 lifecycle-viewmodel-compose 传递提供
 
     testImplementation("junit:junit:4.13.2")
     // org.json 在 Android 单元测试是 stub；SelfUpdater 的 JSON 解析测试需要真实实现
