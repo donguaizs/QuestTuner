@@ -41,8 +41,15 @@ class ProfileRepository(file: File) {
                 val arr = JSONArray(store.readText())
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
+                    // BUG-041：包名严校验（至少两段或 "global"）——单段脏包名是死 profile
+                    // （永不匹配 autoApply/find），丢弃 + Log 自愈。for 内 continue，不影响 ok 判定。
+                    val rawPkg = o.getString("packageName")
+                    if (!isValidPackageName(rawPkg)) {
+                        android.util.Log.w("ProfileRepository", "invalid packageName dropped: $rawPkg")
+                        continue
+                    }
                     val p = AppProfile(
-                        packageName = o.getString("packageName"),
+                        packageName = rawPkg,
                         label = o.optString("label").ifEmpty { null },
                         // BUG-040：超域字段置 null 丢弃（不 coerce——静默产生用户没写过的值
                         // 不诚实；置 null 让 describeProfile 显示「未设该项」，且不下发超域命令）
@@ -127,6 +134,11 @@ class ProfileRepository(file: File) {
             v.takeIf { it > 0 && it <= if (isHeight) 3208 else 3072 }
 
         fun sanitizeLevel(v: Int): Int? = v.takeIf { it in 0..4 }
+
+        /** BUG-041/R6-O1：Android 包名格式（至少两段）+ "global" 白名单 + 长度 ≤100。纯函数可单测。 */
+        private val PKG_NAME = Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$")
+        fun isValidPackageName(pkg: String): Boolean =
+            pkg == "global" || (pkg.length <= 100 && PKG_NAME.matches(pkg))
 
         fun of(filesDir: File): ProfileRepository =
             ProfileRepository(File(filesDir, "profiles.json"))
