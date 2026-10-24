@@ -30,13 +30,15 @@ class ForegroundProfileService : AccessibilityService() {
      */
     private var lastApplied: AppliedRecord? = null
 
-    /** 执行意图：进有 profile 应用=应用；离开=回滚（仅当值仍属我们） */
-    private sealed class ApplyIntent {
+    /** 执行意图：进有 profile 应用=应用；离开=回滚（仅当值仍属我们）。internal 仅为单测可见性 */
+    internal sealed class ApplyIntent {
         data class Apply(val pkg: String, val cmds: List<String>, val profile: AppProfile) : ApplyIntent()
-        data class Leave(val fromPkg: String) : ApplyIntent()
+        /** 携带完整快照（入队时捕获）：执行时共享 lastApplied 已置空，比对必须用自带快照（BUG-020 round3b） */
+        data class Leave(val record: AppliedRecord) : ApplyIntent()
     }
 
-    private data class AppliedRecord(
+    /** 入队时刻的应用证据（internal 仅为单测可见性） */
+    internal data class AppliedRecord(
         val pkg: String,
         val profile: AppProfile,
         /** 应用时的手动代次：UI 手动应用后 generation 变化 → Leave 不回滚（BUG-020 双保险之二） */
@@ -96,7 +98,8 @@ class ForegroundProfileService : AccessibilityService() {
         } else if (lastApplied != null) {
             val prev = lastApplied!!
             lastApplied = null
-            q.trySend(ApplyIntent.Leave(prev.pkg))
+            // 快照随意图走：执行时 lastApplied 已空（或已被后续 Apply 覆盖），Leave 必须自持证据
+            q.trySend(ApplyIntent.Leave(prev))
         }
         // trySend 失败（队列满 16）= 系统事件洪泛，丢弃旧意图安全（最新意图会在队列腾空后到达）
     }
@@ -114,14 +117,15 @@ class ForegroundProfileService : AccessibilityService() {
                 }
             }
             is ApplyIntent.Leave -> {
-                // BUG-020：回滚前值比对——当前属性值已不是我们应用过的（用户手动改过）→ 不动
-                if (!stillOurValues()) {
-                    log("skip rollback for ${intent.fromPkg}: values changed by user")
+                // BUG-020：回滚前值比对——用意图自带快照（执行时 lastApplied 已置空，
+                // 读共享字段是 round-3 的死代码缺陷，VERIFY-round3 专项②）
+                if (!stillOurValues(intent.record)) {
+                    log("skip rollback for ${intent.record.pkg}: values changed by user")
                     return
                 }
                 val ok = ensureServiceConnection() &&
                     TuningExecutor.runCommands(TuningCommands.resetAll())
-                log(if (ok) "rolled back ${intent.fromPkg}" else "rollback failed: ${TuningExecutor.lastError}")
+                log(if (ok) "rolled back ${intent.record.pkg}" else "rollback failed: ${TuningExecutor.lastError}")
             }
         }
     }
@@ -138,19 +142,18 @@ class ForegroundProfileService : AccessibilityService() {
     }
 
     /**
-     * BUG-020 值比对：getprop 读当前值，与我们应用过的 profile 期望值逐项对比。
+     * BUG-020 值比对（round3b）：getprop 读当前值，与意图自带快照的期望值逐项对比。
      * 假设A10：getprop 输出 == setprop 写入的确切值（同值往返）。
      * 探测：比对本身；任一项不匹配 → 视为用户手动改动，返回 false。
      * 失败（getprop 读不到/连接断/代次变化）：返回 false——读不到就无法证明「值仍属我们」，
      * 宁可不回滚也不误清；残留参数由用户手动恢复默认或进有 profile 应用覆盖，可自愈
      * 且不违背「不清用户手动设置」承诺。
      */
-    private suspend fun stillOurValues(): Boolean {
-        val rec = lastApplied ?: return false
+    private suspend fun stillOurValues(record: AppliedRecord): Boolean {
         // 双保险之二：UI 手动应用后代次变化 → 当前值以用户意志为准，不回滚
-        if (TuningExecutor.manualGeneration != rec.generation) return false
+        if (TuningExecutor.manualGeneration != record.generation) return false
         val out = TuningExecutor.runCommand(TuningCommands.statusCommand()) ?: return false
-        return valuesMatch(rec.profile, out.split("---").map { it.trim() })
+        return valuesMatch(record.profile, out.split("---").map { it.trim() })
     }
 
     companion object {
