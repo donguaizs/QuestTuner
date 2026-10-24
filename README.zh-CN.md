@@ -70,14 +70,6 @@ QuestTuner/
 └── docs/             # QA 文档：bug 报告 / 修复方案 / 验证报告
 ```
 
-## 质量
-
-代码经过完整的 agent 团队 QA 流水线（详见 [docs/](docs/)）：**发现 18 个缺陷（1×P0、9×P1、8×P2），修复 17 个**——包括一个导致未配对设备授权必然失败的 P0 级 ADB 公钥编码错误——全部修复经 diff 评审 + 全新构建验证（17/17 PASS）。详情：
-
-- [Bug 报告（Round 1）](docs/bugs/BUG-REPORT-round1.md)
-- [修复方案（Round 1）](docs/plans/PLAN-round1.md)
-- [验证报告（Round 1）](docs/verification/VERIFY-round1.md)
-
 ## 免责声明
 
 本项目仅用于调节个人自己的设备。所有改动仅本次开机有效、完全可逆。与 Meta 无关，风险自负。

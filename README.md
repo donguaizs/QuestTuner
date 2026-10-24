@@ -70,14 +70,6 @@ QuestTuner/
 └── docs/             # QA reports: bug report / fix plan / verification
 ```
 
-## Quality
-
-The codebase went through a full agent-team QA cycle (see [docs/](docs/)): **18 defects found (1×P0, 9×P1, 8×P2), 17 fixed** — including a P0 in the ADB public-key encoding that broke authorization on unpaired devices — all fixes verified by diff review plus a clean build (17/17 PASS). Details:
-
-- [Bug report (round 1)](docs/bugs/BUG-REPORT-round1.md)
-- [Fix plan (round 1)](docs/plans/PLAN-round1.md)
-- [Verification (round 1)](docs/verification/VERIFY-round1.md)
-
 ## Disclaimer
 
 This project is for tuning your own personal device. All changes are session-only and fully reversible. Not affiliated with Meta. Use at your own risk.
