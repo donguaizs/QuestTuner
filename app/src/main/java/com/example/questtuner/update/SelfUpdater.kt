@@ -19,6 +19,21 @@ object SelfUpdater {
     private const val REPO = "donguaizs/QuestTuner"
     private const val API = "https://api.github.com/repos/$REPO/releases/latest"
 
+    /** 允许的下载 host（GitHub Releases 资产分发域）；API 响应中的其他 host 一律拒绝（BUG-021） */
+    private val ALLOWED_HOSTS = setOf(
+        "github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com",
+    )
+
+    /** 下载硬上限（BUG-021）：正常 APK <10MB 量级，100MB 是安全余量上限 */
+    private const val MAX_DOWNLOAD_BYTES = 100L * 1024 * 1024
+
+    /** tag 安全字符集（BUG-022）：git tag 允许含 '/'，可构造路径穿越；仅放行安全字符集 */
+    private val TAG_SAFE = Regex("^[A-Za-z0-9._-]+$")
+
+    /** host 白名单纯函数（可单测） */
+    fun checkHost(url: String): Boolean =
+        runCatching { URL(url).host in ALLOWED_HOSTS }.getOrDefault(false)
+
     data class ReleaseInfo(val tag: String, val url: String, val notes: String, val size: Long)
 
     /** 安装结果通道（receiver 无 VM 引用，经此流转给 UI 观察） */
@@ -44,6 +59,8 @@ object SelfUpdater {
                 val o = JSONObject(body)
                 val tag = o.optString("tag_name")
                 if (tag.isBlank()) return@runCatching null
+                // BUG-022 防御前移：非法 tag 在检查阶段即报错，不让恶意 tag 进入任何文件操作
+                check(TAG_SAFE.matches(tag)) { "Release tag 含非法字符: $tag" }
                 val asset = o.optJSONArray("assets")?.let { arr ->
                     (0 until arr.length()).map { arr.getJSONObject(it) }
                         .firstOrNull { it.optString("name").endsWith(".apk") }
@@ -64,13 +81,19 @@ object SelfUpdater {
         }
     }
 
-    // ---- 2) 下载（带进度回调） ----
+    // ---- 2) 下载（带进度回调；BUG-021 纵深防御三重） ----
     suspend fun download(
         url: String,
+        expectedSize: Long,          // ReleaseInfo.size；<=0 表示未知
         dest: File,
         onProgress: (Int) -> Unit,
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
+            // 纵深防御①：host 白名单（防 API 被篡改后指向任意外部服务器）
+            val host = URL(url).host
+            check(host in ALLOWED_HOSTS) { "下载地址不在白名单: $host" }
+            // 纵深防御②：已知 size 预检
+            if (expectedSize > MAX_DOWNLOAD_BYTES) error("文件过大: ${expectedSize / 1024 / 1024}MB")
             dest.parentFile?.mkdirs()
             val conn = URL(url).openConnection() as HttpURLConnection
             conn.connectTimeout = 15_000
@@ -78,6 +101,8 @@ object SelfUpdater {
             try {
                 if (conn.responseCode != 200) error("HTTP ${conn.responseCode}")
                 val total = conn.contentLengthLong
+                // contentLength 可被伪造/缺失：流式累计才是硬闸
+                if (total > MAX_DOWNLOAD_BYTES) error("Content-Length 超限")
                 dest.outputStream().use { out ->
                     conn.inputStream.use { input ->
                         val buf = ByteArray(16 * 1024)
@@ -85,8 +110,10 @@ object SelfUpdater {
                         while (true) {
                             val n = input.read(buf)
                             if (n < 0) break
-                            out.write(buf, 0, n)
                             done += n
+                            // 纵深防御③：累计硬上限（防 chunked 传输绕过 contentLength）
+                            if (done > MAX_DOWNLOAD_BYTES) error("下载超过 ${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB 上限，中止")
+                            out.write(buf, 0, n)
                             if (total > 0) onProgress((done * 100 / total).toInt())
                         }
                     }
@@ -101,8 +128,11 @@ object SelfUpdater {
         }
     }
 
-    fun updateApk(context: Context, tag: String): File =
-        File(File(context.getExternalFilesDir(null), "update"), "questtuner-$tag.apk")
+    fun updateApk(context: Context, tag: String): File {
+        // BUG-022：净化（checkLatest 已前移校验，此处是第二道防线）
+        check(TAG_SAFE.matches(tag)) { "非法 tag: $tag" }
+        return File(File(context.getExternalFilesDir(null), "update"), "questtuner-$tag.apk")
+    }
 
     // ---- 3) 四重校验（任一失败拒绝安装并删文件） ----
     suspend fun verifyApk(context: Context, f: File): Result<Unit> =

@@ -342,7 +342,7 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             }
             _state.value = _state.value.copy(updateStatus = "下载中…", updateProgress = 0)
             val apk = SelfUpdater.updateApk(ctx, info.tag)
-            SelfUpdater.download(info.url, apk) { p ->
+            SelfUpdater.download(info.url, info.size, apk) { p ->
                 _state.value = _state.value.copy(updateProgress = p)
             }.onSuccess { f ->
                 // 四重校验失败 → 删文件 + 状态提示，绝不进入安装
