@@ -29,6 +29,9 @@ import com.example.questtuner.tuner.AppProfile
 fun TunerApp(viewModel: TunerViewModel) {
     val state by viewModel.state.collectAsState()
     MaterialTheme {
+        if (state.wizardVisible) {
+            SetupWizard(state, viewModel)
+        }
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -36,6 +39,8 @@ fun TunerApp(viewModel: TunerViewModel) {
             item { ConnectionCard(state, viewModel) }
             item { StatusCard(state) }
             item { QuickTuneCard(state, viewModel) }
+            item { AutomationCard(state, viewModel) }
+            item { UpdateCard(state, viewModel) }
             item { Text("按应用 Profile", style = MaterialTheme.typography.titleMedium) }
             items(state.profiles, key = { it.packageName }) { p ->
                 ProfileRow(
@@ -64,6 +69,9 @@ fun ConnectionCard(state: UiState, viewModel: TunerViewModel) {
                 }
                 OutlinedButton(onClick = viewModel::refreshStatus, enabled = state.connected) {
                     Text("刷新状态")
+                }
+                OutlinedButton(onClick = viewModel::disconnect, enabled = state.connected) {
+                    Text("断开")
                 }
             }
         }
