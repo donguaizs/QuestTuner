@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-On-device parameter tuning tool for **Meta Quest 3** — a QGO / Quest Assistant style app. The APK runs on the headset itself and talks to the local ADB daemon (`127.0.0.1:5555`) through a **pure-Kotlin ADB client** to run `setprop` commands. **No root, no PC required** after installation.
+On-device parameter tuning tool for **Meta Quest 3**. The APK runs on the headset itself and talks to the local ADB daemon (`127.0.0.1:5555`) through a **pure-Kotlin ADB client** to run `setprop` commands. **No root, no PC required** after installation.
 
 ## Features
 
