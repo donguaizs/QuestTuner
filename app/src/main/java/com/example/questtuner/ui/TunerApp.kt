@@ -157,6 +157,8 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
     var cpu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(2) }
     var gpu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(2) }
     var pickedLabel by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    // BUG-031：选择器所选包名：pickedLabel 的有效期锚点
+    var pickedPkg by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var showPicker by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     if (showPicker) {
         AppPickerDialog(
@@ -166,6 +168,7 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
             onDismiss = { showPicker = false },
             onSelect = { app ->
                 pkg = app.packageName
+                pickedPkg = app.packageName      // BUG-031：记录锚点
                 pickedLabel = app.label
                 showPicker = false
             },
@@ -176,7 +179,11 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
             Text("包名", style = MaterialTheme.typography.labelSmall)
             androidx.compose.material3.OutlinedTextField(
                 value = pkg,
-                onValueChange = { pkg = it },
+                onValueChange = {
+                    pkg = it
+                    // BUG-031：手改包名 → 与选择器所选不一致 → 陈旧 label 立即失效
+                    if (it != pickedPkg) pickedLabel = null
+                },
                 placeholder = { Text("com.example.app（留空=全局）") },
                 singleLine = true,
             )
@@ -205,10 +212,12 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
                 onClick = {
                     val w = (1680 * scale).toInt().coerceAtMost(3072)
                     val h = (1760 * scale).toInt().coerceAtMost(3200)
+                    // BUG-031/R4-O6：label 只在包名仍等于选择器所选时采用（防御性终检）
+                    val label = (if (pkg == pickedPkg) pickedLabel else null) ?: pkg.ifBlank { "全局" }
                     viewModel.saveProfile(
                         AppProfile(
                             packageName = pkg.ifBlank { "global" },
-                            label = pickedLabel ?: pkg.ifBlank { "全局" },
+                            label = label,
                             refreshRate = hz,
                             textureWidth = w,
                             textureHeight = h,
