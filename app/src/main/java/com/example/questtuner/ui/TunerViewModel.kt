@@ -32,7 +32,10 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<UiState> = _state
 
     init {
-        _state.value = _state.value.copy(profiles = repo.profiles())
+        viewModelScope.launch {
+            val ps = withContext(Dispatchers.IO) { repo.profiles() }
+            _state.value = _state.value.copy(profiles = ps)
+        }
     }
 
     fun connect() {
@@ -104,15 +107,23 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveProfile(p: AppProfile) {
         viewModelScope.launch {
-            repo.save(p)
-            _state.value = _state.value.copy(profiles = repo.profiles())
+            withContext(Dispatchers.IO) {
+                repo.save(p)
+                repo.profiles()
+            }.let { ps ->
+                _state.value = _state.value.copy(profiles = ps)
+            }
         }
     }
 
     fun deleteProfile(pkg: String) {
         viewModelScope.launch {
-            repo.delete(pkg)
-            _state.value = _state.value.copy(profiles = repo.profiles())
+            withContext(Dispatchers.IO) {
+                repo.delete(pkg)
+                repo.profiles()
+            }.let { ps ->
+                _state.value = _state.value.copy(profiles = ps)
+            }
         }
     }
 
