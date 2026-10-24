@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="a11y_service_desc">仅监听前台应用切换（不读取屏幕内容），用于按应用自动应用调参 Profile。纯本地运行，不上传任何数据。</string>
+    <string name="app_a11y_label">QuestTuner 前台调参</string>
+</resources>

@@ -29,6 +29,9 @@ import com.example.questtuner.tuner.AppProfile
 fun TunerApp(viewModel: TunerViewModel) {
     val state by viewModel.state.collectAsState()
     MaterialTheme {
+        if (state.wizardVisible) {
+            SetupWizard(state, viewModel)
+        }
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -36,6 +39,8 @@ fun TunerApp(viewModel: TunerViewModel) {
             item { ConnectionCard(state, viewModel) }
             item { StatusCard(state) }
             item { QuickTuneCard(state, viewModel) }
+            item { AutomationCard(state, viewModel) }
+            item { UpdateCard(state, viewModel) }
             item { Text("按应用 Profile", style = MaterialTheme.typography.titleMedium) }
             items(state.profiles, key = { it.packageName }) { p ->
                 ProfileRow(
@@ -64,6 +69,9 @@ fun ConnectionCard(state: UiState, viewModel: TunerViewModel) {
                 }
                 OutlinedButton(onClick = viewModel::refreshStatus, enabled = state.connected) {
                     Text("刷新状态")
+                }
+                OutlinedButton(onClick = viewModel::disconnect, enabled = state.connected) {
+                    Text("断开")
                 }
             }
         }
@@ -144,6 +152,20 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
     var scale by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(1.0f) }
     var cpu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(2) }
     var gpu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(2) }
+    var pickedLabel by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var showPicker by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    if (showPicker) {
+        AppPickerDialog(
+            apps = state.apps,
+            onRefresh = viewModel::loadApps,
+            onDismiss = { showPicker = false },
+            onSelect = { app ->
+                pkg = app.packageName
+                pickedLabel = app.label
+                showPicker = false
+            },
+        )
+    }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("包名", style = MaterialTheme.typography.labelSmall)
@@ -153,6 +175,10 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
                 placeholder = { Text("com.example.app（留空=全局）") },
                 singleLine = true,
             )
+            OutlinedButton(onClick = {
+                if (state.apps.isEmpty()) viewModel.loadApps()
+                showPicker = true
+            }) { Text("选择应用") }
             Text("刷新率: ${hz}Hz")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(72, 90, 120).forEach { c ->
@@ -176,7 +202,7 @@ fun NewProfileCard(state: UiState, viewModel: TunerViewModel) {
                     viewModel.saveProfile(
                         AppProfile(
                             packageName = pkg.ifBlank { "global" },
-                            label = pkg.ifBlank { "全局" },
+                            label = pickedLabel ?: pkg.ifBlank { "全局" },
                             refreshRate = hz,
                             textureWidth = w,
                             textureHeight = h,
