@@ -61,6 +61,7 @@ class ProfileRepository(file: File) {
         }
     }
 
+    @Synchronized
     fun profiles(): List<AppProfile> = all.values.toList()
 
     @Synchronized
@@ -75,6 +76,7 @@ class ProfileRepository(file: File) {
         persist()
     }
 
+    @Synchronized
     fun find(packageName: String): AppProfile? = all[packageName]
 
     private fun persist() {
