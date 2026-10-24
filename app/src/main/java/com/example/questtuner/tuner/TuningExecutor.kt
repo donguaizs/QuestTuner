@@ -37,6 +37,12 @@ object TuningExecutor {
     fun markSessionActive() { adbSessionActive = true }
     fun markSessionInactive() { adbSessionActive = false }
 
+    /** 手动应用代次（BUG-020）：UI 每次手动应用/恢复默认时递增；服务比对快照代次判断是否已被手动覆盖 */
+    @Volatile var manualGeneration: Int = 0
+        private set
+
+    fun bumpManualGeneration() { manualGeneration++ }
+
     /** UI 侧跨函数竞争防线（applyProfile 中 refreshStatus 等）；AdbConnection 内层锁是最终防线 */
     private val adbMutex = Mutex()
 
