@@ -51,10 +51,10 @@ data class UiState(
 class TunerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ProfileRepository.of(app.filesDir)
+    private val prefs = TunerPrefs.get(app)
     // R4-O3：wizardVisible 构造时同步读 prefs（SP 首读开销可忽略），消除「主界面闪现再弹向导」
     private val _state = MutableStateFlow(UiState(wizardVisible = !prefs.firstRunDone))
     val state: StateFlow<UiState> = _state
-    private val prefs = TunerPrefs.get(app)
     private var pendingRelease: SelfUpdater.ReleaseInfo? = null
     /** BUG-026：connecting 态的连接协程，支持取消 */
     private var connectJob: kotlinx.coroutines.Job? = null
