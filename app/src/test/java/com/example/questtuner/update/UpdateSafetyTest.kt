@@ -24,6 +24,9 @@ class UpdateSafetyTest {
         assertFalse(SelfUpdater.checkHost("https://github.com.evil.io/a.apk"))
         assertFalse(SelfUpdater.checkHost("not a url"))
         assertFalse(SelfUpdater.checkHost(""))
+        // scheme 校验（round3b）：白名单 host 但明文/非 http 协议也拒绝
+        assertFalse(SelfUpdater.checkHost("http://github.com/donguaizs/QuestTuner/releases/download/v0.3.0/a.apk"))
+        assertFalse(SelfUpdater.checkHost("ftp://github.com/x.apk"))
     }
 
     // ---- tag 净化（BUG-022） ----

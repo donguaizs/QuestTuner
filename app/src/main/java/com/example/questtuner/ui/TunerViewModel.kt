@@ -285,9 +285,14 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
         if (_state.value.appsLoading) return
         _state.value = _state.value.copy(appsLoading = true)
         viewModelScope.launch(Dispatchers.IO) {
-            val apps = AppScanner.query(getApplication())
-            withContext(Dispatchers.Main) {
-                _state.value = _state.value.copy(apps = apps, appsLoading = false)
+            try {
+                val apps = AppScanner.query(getApplication())
+                withContext(Dispatchers.Main) {
+                    _state.value = _state.value.copy(apps = apps)
+                }
+            } finally {
+                // 异常也必须复位 loading（StateFlow 任意线程可写），否则选择器永久「加载中」
+                _state.value = _state.value.copy(appsLoading = false)
             }
         }
     }

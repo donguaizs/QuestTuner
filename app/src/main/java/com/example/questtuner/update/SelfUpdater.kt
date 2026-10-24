@@ -34,9 +34,11 @@ object SelfUpdater {
     fun isTagSafe(tag: String): Boolean =
         TAG_SAFE.matches(tag) && tag != "." && tag != ".."
 
-    /** host 白名单纯函数（可单测） */
+    /** host 白名单 + scheme 校验（可单测）：仅 https 且 host 精确匹配 */
     fun checkHost(url: String): Boolean =
-        runCatching { URL(url).host in ALLOWED_HOSTS }.getOrDefault(false)
+        runCatching {
+            url.startsWith("https://") && URL(url).host in ALLOWED_HOSTS
+        }.getOrDefault(false)
 
     data class ReleaseInfo(val tag: String, val url: String, val notes: String, val size: Long)
 
@@ -93,9 +95,8 @@ object SelfUpdater {
         onProgress: (Int) -> Unit,
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
-            // 纵深防御①：host 白名单（防 API 被篡改后指向任意外部服务器）
-            val host = URL(url).host
-            check(host in ALLOWED_HOSTS) { "下载地址不在白名单: $host" }
+            // 纵深防御①：scheme + host 白名单（防 API 被篡改后指向任意外部服务器/明文通道）
+            check(checkHost(url)) { "下载地址不在白名单: $url" }
             // 纵深防御②：已知 size 预检
             if (expectedSize > MAX_DOWNLOAD_BYTES) error("文件过大: ${expectedSize / 1024 / 1024}MB")
             dest.parentFile?.mkdirs()
