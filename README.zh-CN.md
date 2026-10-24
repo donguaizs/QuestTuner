@@ -75,7 +75,7 @@ adb shell pm grant com.example.questtuner android.permission.WRITE_SECURE_SETTIN
 
 ## 隐私
 
-**隐私**。唯一的网络行为是你主动点击「检查更新」时访问 GitHub API（api.github.com）。Profile、调参、无障碍服务（只读前台应用包名，绝不读取屏幕内容）全部本地完成。无统计、无追踪、无数据上传。
+唯一的网络行为是你主动点击「检查更新」时访问 GitHub API（api.github.com）。Profile、调参、无障碍服务（只读前台应用包名，绝不读取屏幕内容）全部本地完成。无统计、无追踪、无数据上传。
 
 ## 重要说明
 
