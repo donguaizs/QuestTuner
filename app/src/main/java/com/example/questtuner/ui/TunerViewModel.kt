@@ -261,4 +261,61 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             refreshStatus()
         }
     }
+
+    // ---- P1-2 自更新 ----
+
+    fun checkUpdate() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(updateStatus = "检查中…")
+            val r = SelfUpdater.checkLatest(getApplication())
+            r.onSuccess { info ->
+                if (info == null) {
+                    pendingRelease = null
+                    _state.value = _state.value.copy(updateStatus = "已是最新版本")
+                } else {
+                    pendingRelease = info
+                    _state.value = _state.value.copy(
+                        updateAvailable = true,
+                        updateStatus = "新版本 ${info.tag} 可用（${info.size / 1024}KB）",
+                    )
+                }
+            }.onFailure {
+                _state.value = _state.value.copy(updateStatus = "检查失败: ${it.message}")
+            }
+        }
+    }
+
+    fun downloadAndInstall() {
+        val info = pendingRelease ?: return
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            // 门禁：未允许安装未知应用 → 引导系统设置（用户返回后需重新点下载安装）
+            if (!SelfUpdater.canRequestInstalls(ctx)) {
+                SelfUpdater.requestInstallPermission(ctx)
+                _state.value = _state.value.copy(
+                    updateStatus = "请先允许本应用安装未知应用，返回后重试",
+                )
+                return@launch
+            }
+            _state.value = _state.value.copy(updateStatus = "下载中…", updateProgress = 0)
+            val apk = SelfUpdater.updateApk(ctx, info.tag)
+            SelfUpdater.download(info.url, apk) { p ->
+                _state.value = _state.value.copy(updateProgress = p)
+            }.onSuccess { f ->
+                // 四重校验失败 → 删文件 + 状态提示，绝不进入安装
+                SelfUpdater.verifyApk(ctx, f).onSuccess {
+                    _state.value = _state.value.copy(
+                        updateStatus = "校验通过，等待系统确认…", updateProgress = -1)
+                    SelfUpdater.install(ctx, f)
+                }.onFailure { e ->
+                    f.delete()
+                    _state.value = _state.value.copy(
+                        updateStatus = "校验失败，已取消: ${e.message}", updateProgress = -1)
+                }
+            }.onFailure { e ->
+                _state.value = _state.value.copy(
+                    updateStatus = "下载失败: ${e.message}", updateProgress = -1)
+            }
+        }
+    }
 }
