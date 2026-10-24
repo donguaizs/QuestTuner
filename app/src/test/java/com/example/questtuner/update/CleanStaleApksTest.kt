@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
-/** R4-O1：update/ 目录陈旧 APK 清理（纯文件操作，临时目录验证）。 */
+/** R4-O1：update/ 目录陈旧 APK 清理（cleanStaleApksIn 纯函数，临时目录验证）。 */
 class CleanStaleApksTest {
 
     @Test
@@ -18,7 +18,7 @@ class CleanStaleApksTest {
             val stale2 = File(dir, "questtuner-v0.1.0-beta.1.apk")
             listOf(keep, stale1, stale2).forEach { it.writeBytes(byteArrayOf(1, 2, 3)) }
 
-            SelfUpdater.cleanStaleApks(TestContext(dir), "v0.3.0")
+            SelfUpdater.cleanStaleApksIn(dir, "v0.3.0")
 
             assertTrue("当前 tag 保留", keep.exists())
             assertFalse("旧版本清除", stale1.exists())
@@ -29,13 +29,8 @@ class CleanStaleApksTest {
     }
 
     @Test
-    fun emptyOrMissingDir_noError() {
-        // 目录不存在 → runCatching 吞掉，不抛
-        SelfUpdater.cleanStaleApks(TestContext(File("/nonexistent/qt-dir")), "v0.3.0")
-    }
-
-    /** 最小 Context stub：仅 getExternalFilesDir 返回测试目录 */
-    private class TestContext(private val dir: File) : android.content.Context() {
-        override fun getExternalFilesDir(type: String?): File? = dir
+    fun missingDir_noError() {
+        // 目录不存在：listFiles() 返回 null → 循环不执行，不抛
+        SelfUpdater.cleanStaleApksIn(File("/nonexistent/qt-dir"), "v0.3.0")
     }
 }
