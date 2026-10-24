@@ -13,16 +13,17 @@ import org.junit.Test
  */
 class LeaveSnapshotTest {
 
-    private fun record(pkg: String, gen: Int = 0, refreshRate: Int? = 90) = AppliedRecord(
-        pkg = pkg,
-        profile = AppProfile(packageName = pkg, refreshRate = refreshRate),
-        generation = gen,
-    )
+    private fun record(pkg: String, gen: Int = 0, refreshRate: Int? = 90) =
+        ForegroundProfileService.AppliedRecord(
+            pkg = pkg,
+            profile = AppProfile(packageName = pkg, refreshRate = refreshRate),
+            generation = gen,
+        )
 
     @Test
     fun leaveCarriesSnapshot_notSharedField() {
         // 序列模拟：Apply(A) 后 lastApplied 有值；桌面事件入队 Leave(prev) 并置空
-        var lastApplied: AppliedRecord? = record("com.game.a")
+        var lastApplied: ForegroundProfileService.AppliedRecord? = record("com.game.a")
         val q = Channel<ForegroundProfileService.ApplyIntent>(capacity = 16)
         // 事件入口逻辑：捕获快照 → 置空 → 入队
         val prev = lastApplied!!
