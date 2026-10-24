@@ -44,7 +44,6 @@ data class UiState(
     // ---- P1-2 自更新 ----
     val updateAvailable: Boolean = false,
     val updateStatus: String = "",
-    val updateProgress: Int = -1,          // -1 无任务；0..100 下载进度
     val updateChecking: Boolean = false,   // O7：检查更新防重入
 )
 
@@ -58,6 +57,9 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     private var pendingRelease: SelfUpdater.ReleaseInfo? = null
     /** BUG-026：connecting 态的连接协程，支持取消 */
     private var connectJob: kotlinx.coroutines.Job? = null
+    /** BUG-034：下载进度独立通道——高频发射不再触发全树重组（UpdateCard 局部 collect） */
+    private val _updateProgress = MutableStateFlow(-1)
+    val updateProgress: StateFlow<Int> = _updateProgress
 
     init {
         viewModelScope.launch {
@@ -82,7 +84,8 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             SelfUpdater.installResult.collect { r ->
                 if (r != null) {
                     _state.value = _state.value.copy(
-                        updateStatus = r, updateProgress = -1, updateAvailable = false)
+                        updateStatus = r, updateAvailable = false)
+                    _updateProgress.value = -1
                     SelfUpdater.consumeInstallResult()
                 }
             }
@@ -132,8 +135,14 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
         if (_state.value.connecting) return
         _state.value = _state.value.copy(connecting = true, adbStatus = "连接中…")
         connectJob = viewModelScope.launch {
+            // BUG-034：连接过程文案节流（首条立即 + 后续 200ms 合并）——note 流不再逐条全树重组
+            var lastNoteTime = 0L
             val ok = SecureAutomation.ensureWifiAdbThenConnect(getApplication()) { note ->
-                _state.value = _state.value.copy(adbStatus = note)
+                val now = System.currentTimeMillis()
+                if (now - lastNoteTime >= 200) {
+                    lastNoteTime = now
+                    _state.value = _state.value.copy(adbStatus = note)
+                }
             }
             if (ok) {
                 // BUG-027：用户显式连接成功 → 激活会话（autoApply 服务可工作/自愈）
@@ -432,32 +441,34 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 return@launch
             }
-            _state.value = _state.value.copy(updateStatus = "下载中…", updateProgress = 0)
+            _state.value = _state.value.copy(updateStatus = "下载中…")
+            _updateProgress.value = 0
             // R4-O1：清理跨版本残留的陈旧 APK
             SelfUpdater.cleanStaleApks(ctx, info.tag)
             val apk = SelfUpdater.updateApk(ctx, info.tag)
             SelfUpdater.download(info.url, info.size, apk) { p ->
-                _state.value = _state.value.copy(updateProgress = p)
+                _updateProgress.value = p        // BUG-034：高频独立 flow，不惊动 UiState
             }.onSuccess { f ->
                 // 四重校验失败 → 删文件 + 状态提示，绝不进入安装
                 SelfUpdater.verifyApk(ctx, f).onSuccess {
-                    _state.value = _state.value.copy(
-                        updateStatus = "校验通过，等待系统确认…", updateProgress = -1)
+                    _state.value = _state.value.copy(updateStatus = "校验通过，等待系统确认…")
+                    _updateProgress.value = -1
                     // BUG-024：安装异常（磁盘满/会话失败）→ 状态提示，不再有崩溃路径
                     SelfUpdater.install(ctx, f).onFailure { e ->
                         f.delete()
                         _state.value = _state.value.copy(
-                            updateStatus = "安装失败: ${e.message}（可用 PC adb install 手动更新）",
-                            updateProgress = -1)
+                            updateStatus = "安装失败: ${e.message}（可用 PC adb install 手动更新）")
+                        _updateProgress.value = -1
                     }
                 }.onFailure { e ->
                     f.delete()
                     _state.value = _state.value.copy(
-                        updateStatus = "校验失败，已取消: ${e.message}", updateProgress = -1)
+                        updateStatus = "校验失败，已取消: ${e.message}")
+                    _updateProgress.value = -1
                 }
             }.onFailure { e ->
-                _state.value = _state.value.copy(
-                    updateStatus = "下载失败: ${e.message}", updateProgress = -1)
+                _state.value = _state.value.copy(updateStatus = "下载失败: ${e.message}")
+                _updateProgress.value = -1
             }
         }
     }

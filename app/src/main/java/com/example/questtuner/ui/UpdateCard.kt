@@ -12,20 +12,24 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun UpdateCard(state: UiState, viewModel: TunerViewModel) {
+    // BUG-034：进度局部订阅——下载期间只有本 Card 的进度条重组，不再全树刷新
+    val progress by viewModel.updateProgress.collectAsState()
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("更新", style = MaterialTheme.typography.titleMedium)
             // O8：文案直读，去掉别扭的「当前 …」前缀
             Text(if (state.updateStatus.isEmpty()) "手动检查更新（GitHub Releases，HTTPS）" else state.updateStatus,
                 style = MaterialTheme.typography.bodySmall)
-            if (state.updateProgress >= 0) {
+            if (progress >= 0) {
                 LinearProgressIndicator(
-                    progress = { state.updateProgress / 100f },
+                    progress = { progress / 100f },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
