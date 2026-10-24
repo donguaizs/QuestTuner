@@ -19,7 +19,9 @@ data class AppProfile(
     fun toCommands(): List<String> = buildList {
         refreshRate?.let { addAll(TuningCommands.setRefreshRate(it)) }
         textureWidth?.let { w -> textureHeight?.let { h -> addAll(TuningCommands.setResolution(w, h)) } }
-        cpuLevel?.let { c -> gpuLevel?.let { g -> addAll(TuningCommands.setCpuGpuLevel(c, g)) } }
+        // cpu/gpu 各自独立生成（setprop 相互独立，无成对必要；与 describeProfile 独立显示一致）
+        cpuLevel?.let { addAll(listOf("setprop debug.oculus.cpuLevel $it")) }
+        gpuLevel?.let { addAll(listOf("setprop debug.oculus.gpuLevel $it")) }
     }
 }
 
