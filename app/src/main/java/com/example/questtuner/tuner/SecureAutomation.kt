@@ -88,9 +88,14 @@ object SecureAutomation {
             val cur = Settings.Secure.getString(cr, "enabled_accessibility_services") ?: ""
             if (!cur.split(':').map { it.trim() }.contains(flat)) {
                 val next = mergeA11yList(cur, flat)
-                Settings.Secure.putString(cr, "enabled_accessibility_services", next)
+                // BUG-025 对称补强：putString 静默失败返回 false 不抛异常——显式检查
+                if (!Settings.Secure.putString(cr, "enabled_accessibility_services", next)) {
+                    return@runCatching CapProbe.WriteRejected
+                }
             }
-            Settings.Secure.putString(cr, "accessibility_enabled", "1")
+            if (!Settings.Secure.putString(cr, "accessibility_enabled", "1")) {
+                return@runCatching CapProbe.WriteRejected
+            }
             // 回读（存储层确认）
             val stored = Settings.Secure.getString(cr, "enabled_accessibility_services") ?: ""
             if (!stored.split(':').map { it.trim() }.contains(flat)) CapProbe.WriteRejected
@@ -106,9 +111,17 @@ object SecureAutomation {
             val cur = Settings.Secure.getString(cr, "enabled_accessibility_services") ?: ""
             val rest = cur.split(':').map { it.trim() }
                 .filter { it.isNotEmpty() && it != flat }.joinToString(":")
-            Settings.Secure.putString(cr, "enabled_accessibility_services", rest)
-            if (rest.isEmpty()) Settings.Secure.putString(cr, "accessibility_enabled", "0")
-            CapProbe.Ok
+            // putString 返回 false = 静默失败（不抛异常）——显式检查
+            if (!Settings.Secure.putString(cr, "enabled_accessibility_services", rest)) {
+                return@runCatching CapProbe.WriteRejected
+            }
+            if (rest.isEmpty() && !Settings.Secure.putString(cr, "accessibility_enabled", "0")) {
+                return@runCatching CapProbe.WriteRejected
+            }
+            // 回读探测（与 enable 分支对称）：确认 flat 已移除
+            val stored = Settings.Secure.getString(cr, "enabled_accessibility_services") ?: ""
+            if (stored.split(':').map { it.trim() }.contains(flat)) CapProbe.WriteRejected
+            else CapProbe.Ok
         }.getOrElse { CapProbe.Error(it.message) }
     }
 

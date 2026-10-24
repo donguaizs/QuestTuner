@@ -190,9 +190,18 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             }
         } else {
             viewModelScope.launch(Dispatchers.IO) {
-                SecureAutomation.disableA11yService(getApplication())
+                // BUG-025：停用结果如实写进 adbStatus（与启用分支文案对称）
+                val r = SecureAutomation.disableA11yService(getApplication())
                 withContext(Dispatchers.Main) {
-                    _state.value = _state.value.copy(a11yRunning = false)
+                    _state.value = _state.value.copy(
+                        a11yRunning = false,
+                        adbStatus = when (r) {
+                            is SecureAutomation.CapProbe.Ok -> "无障碍服务已停用"
+                            is SecureAutomation.CapProbe.WriteRejected -> "停用写入被拒绝，请到系统设置手动关闭"
+                            is SecureAutomation.CapProbe.Error -> "停用失败(${r.message})，请到系统设置手动关闭"
+                            is SecureAutomation.CapProbe.NoPermission -> "未授权，请到系统设置手动关闭"
+                        },
+                    )
                 }
             }
         }
