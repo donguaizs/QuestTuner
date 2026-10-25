@@ -1,6 +1,6 @@
 # TODO（round-next）
 
-> 本文件为 2026-10-25 09:00 迭代循环收尾时的最终遗留池。8 轮迭代的完整 QA 痕迹见 docs/bugs、docs/plans、docs/verification。
+> 本文件为 2026-10-25 14:30 迭代循环收尾（Round 9 合入 master 8691bd7）后的最终遗留池。9 轮迭代的完整 QA 痕迹见 docs/bugs、docs/plans、docs/verification；本次会话全程见 docs/ITERATION-REPORT-2026-10-25.md。
 
 ## 发布检查单（每次打 tag 前执行，源自 BUG-043/BUG-044 教训）
 1. `app/build.gradle.kts`：versionCode +1、versionName 按语义化递增
