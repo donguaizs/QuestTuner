@@ -29,10 +29,13 @@ class A11yRoundTripTest {
     fun setup() {
         val app = ApplicationProvider.getApplicationContext<Application>()
         ctx = app
-        // Robolectric 4.12：WRITE_SECURE_SETTINGS 是 signature 级权限，shadowOf(app)
-        // .grantPermissions 对 ShadowContextImpl 生效但 checkPermission 走的是
-        // ShadowPackageManager 的 packageInfo.requestedPermissions 路径——需要把权限
-        // 直接写进本包 PackageInfo 再 rebroadcast（4.12 无 grantPermission(String,String)）
+        // BUG-048：权限授予唯一承重层 = PackageInfo 手术（把 WRITE_SECURE_SETTINGS 写进
+        // requestedPermissions + flags 置位后 shadowPm.installPackage）。探针实验证明：
+        // 仅 shadowOf(app).grantPermissions(...) 不生效——SecureAutomation.hasWriteSecureSettings
+        // 走 PackageManager.checkPermission 路径（SecureAutomation.kt:33-35），4.12 的
+        // grantPermissions 对该路径无效。此手术是 Robolectric 4.12 无 grantPermission(String,String)
+        // 下的未文档化 Shadow 行为依赖：**删改前先跑临时探针用例确认 NoPermission 门禁仍可放行**，
+        // 否则 4 个用例全红且报错（CapProbe.NoPermission）不指向权限层，难排查。
         val pm = app.packageManager
         val pi = pm.getPackageInfo(app.packageName, android.content.pm.PackageManager.GET_PERMISSIONS)
         val perms = pi.requestedPermissions?.toMutableList() ?: mutableListOf()
@@ -41,15 +44,13 @@ class A11yRoundTripTest {
             pi.requestedPermissions = perms.toTypedArray()
         }
         val granted = pi.requestedPermissionsFlags ?: IntArray(perms.size)
-        // REQUESTED_PERMISSION_GRANTED = 1<<1
+        // REQUESTED_PERMISSION_GRANTED = 1<<1；flags 数组与权限表逐位对齐置位
         for (i in perms.indices) {
             if (i < granted.size) granted[i] = granted[i] or 2
-            else if (i == granted.size) {}
         }
         pi.requestedPermissionsFlags = granted
         val shadowPm = shadowOf(pm)
         shadowPm.installPackage(pi)
-        shadowOf(app).grantPermissions(android.Manifest.permission.WRITE_SECURE_SETTINGS)
         Settings.Secure.putString(ctx.contentResolver, "enabled_accessibility_services", "")
     }
 

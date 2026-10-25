@@ -36,8 +36,14 @@ class BootReceiver : BroadcastReceiver() {
                 if (ok) break
                 delay(3_000)
             }
-            TuningExecutor.disconnect()
-            SecureAutomation.disableWifiAdbIfWeEnabled(appContext)
+            // BUG-050：收尾必须条件断开——connection 是全局单例，若用户恰在 30s
+            // 恢复窗口内显式连接（会话已激活），无条件 disconnect 会踢断用户连接、
+            // disableWifiAdbIfWeEnabled 会关掉用户 connect 流程刚开启的无线调试。
+            // 非会话态（用户未连接）→ 维持原清理语义。
+            if (!TuningExecutor.adbSessionActive) {
+                TuningExecutor.disconnect()
+                SecureAutomation.disableWifiAdbIfWeEnabled(appContext)
+            }
             log(appContext, if (ok) "boot restore ok" else "boot restore failed: ${TuningExecutor.lastError}")
         }
     }

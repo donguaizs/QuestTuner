@@ -363,6 +363,7 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveProfile(p: AppProfile) {
+        val priorEdit = _state.value.editingProfile   // BUG-052：捕获保存发起时的编辑态引用
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 repo.save(p)
@@ -370,8 +371,13 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             }.let { ps ->
                 _state.value = _state.value.copy(
                     profiles = ps,
-                    // BUG-041：编辑模式保存完成 → 退出编辑态（remember(null) 重置回新建默认）
-                    editingProfile = null,
+                    // BUG-052（返工）：条件清用**引用比较（!==）**且锚点是 priorEdit——
+                    // 保存完成时编辑态仍是保存发起时的那个引用（未被用户换过）→ 清空退出
+                    // （恢复 BUG-041 旅程 3"保存后退出编辑态"）；保存期间用户已点开新编辑
+                    // （引用已变）→ 保留。不能用 data class 值比较（it != priorEdit）：
+                    // doSave 从表单状态新建 AppProfile，旅程 3 改过字段时新值≠旧值，
+                    // takeIf 恒真 → 不清 → BUG-041 回归（David 验证 FAIL 的教训）。
+                    editingProfile = _state.value.editingProfile?.takeIf { it !== priorEdit },
                 )
             }
         }
@@ -405,7 +411,12 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                 repo.delete(pkg)
                 repo.profiles()
             }.let { ps ->
-                _state.value = _state.value.copy(profiles = ps)
+                _state.value = _state.value.copy(
+                    profiles = ps,
+                    // BUG-053：删除的是当前编辑对象 → 同步退出编辑态，防止悬挂引用
+                    // 让 NewProfileCard 停留编辑态、点保存"复活"已删除的 profile
+                    editingProfile = _state.value.editingProfile?.takeIf { it?.packageName != pkg },
+                )
             }
         }
     }

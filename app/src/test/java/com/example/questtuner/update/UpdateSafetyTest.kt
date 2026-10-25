@@ -1,6 +1,8 @@
 package com.example.questtuner.update
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -43,5 +45,29 @@ class UpdateSafetyTest {
         for (tag in listOf("../../x", "a/../../b", "a/b", "..", "a\\b", "a b", "a;b", "")) {
             assertFalse("tag 应被拒绝: $tag", SelfUpdater.isTagSafe(tag))
         }
+    }
+
+    // ---- selectApkAsset（BUG-049） ----
+
+    @Test
+    fun selectApkAsset_prefersRelease() {
+        // v0.2.2 实测顺序：debug 在前（20MB）→ 必须选中 release
+        assertEquals("QuestTuner-v0.2.2-release.apk", SelfUpdater.selectApkAsset(
+            listOf("QuestTuner-v0.2.2-debug.apk", "QuestTuner-v0.2.2-release.apk")))
+    }
+
+    @Test
+    fun selectApkAsset_fallsBackToAnyApk() {
+        assertEquals("QuestTuner-v0.3.0.apk", SelfUpdater.selectApkAsset(
+            listOf("QuestTuner-v0.3.0.apk", "QuestTuner-v0.3.0-sources.jar")))
+        assertEquals("a.apk", SelfUpdater.selectApkAsset(listOf("README.md", "a.apk")))
+    }
+
+    @Test
+    fun selectApkAsset_skipsSourcesAndMapping_andNull() {
+        assertEquals("QuestTuner-v0.3.0-release.apk", SelfUpdater.selectApkAsset(
+            listOf("x-mapping.txt", "QuestTuner-v0.3.0-release.apk", "y-sources.jar")))
+        assertNull(SelfUpdater.selectApkAsset(listOf("x-sources.jar", "y-mapping.txt", "notes.md")))
+        assertNull(SelfUpdater.selectApkAsset(emptyList()))
     }
 }

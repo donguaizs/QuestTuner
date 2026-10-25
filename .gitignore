@@ -14,3 +14,9 @@ keystore/
 # OS
 Thumbs.db
 .DS_Store
+
+# Robolectric/jar 解包残渣（BUG-047：曾泄漏到仓库根，2026-10-24）
+/META-INF/
+/android/
+/org/
+/sqlite4java/

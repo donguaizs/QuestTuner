@@ -40,12 +40,18 @@ Everything happens on the headset: the app connects to `adbd` on `127.0.0.1:5555
 
 ## Build
 
-Requirements: **JDK 17**, **Android SDK** (compileSdk 34), **Gradle 8.7+**.
+Requirements: **JDK 17**, **Android SDK** (compileSdk 34).
 
 ```bash
-gradle :app:assembleDebug
+.\gradlew.bat :app:assembleDebug        # Windows (or ./gradlew on Linux/macOS)
 # Output: app/build/outputs/apk/debug/app-debug.apk
 ```
+
+The Gradle wrapper (8.7, SHA-256 pinned) downloads Gradle automatically on first run —
+an internet connection is required once. Fully offline builds can point
+`distributionUrl` in `gradle/wrapper/gradle-wrapper.properties` to a local
+`file:///` copy of `gradle-8.7-bin.zip`, or use a preinstalled Gradle 8.7
+(`gradle :app:assembleDebug`) as fallback.
 
 ## Install on Quest 3
 

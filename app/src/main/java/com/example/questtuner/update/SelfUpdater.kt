@@ -40,6 +40,16 @@ object SelfUpdater {
             url.startsWith("https://") && URL(url).host in ALLOWED_HOSTS
         }.getOrDefault(false)
 
+    /**
+     * 纯函数（可单测）：从 GitHub Release assets 名称列表中选出目标 APK。
+     * BUG-049：assets 数组顺序无保证（GitHub 按 asset id/上传完成序返回，v0.2.2 实测
+     * debug 在前）——偏好 -release.apk 变体，fallback 任意 .apk；跳过 sources/mapping
+     * 等明显非目标资产。找不到任何 apk 返回 null（checkLatest 上游按无资产处理）。
+     */
+    fun selectApkAsset(names: List<String>): String? =
+        names.firstOrNull { it.endsWith("-release.apk") }
+            ?: names.firstOrNull { it.endsWith(".apk") && !it.contains("sources") && !it.contains("mapping") }
+
     data class ReleaseInfo(val tag: String, val url: String, val notes: String, val size: Long)
 
     /** 安装结果通道（receiver 无 VM 引用，经此流转给 UI 观察） */
@@ -67,9 +77,14 @@ object SelfUpdater {
                 if (tag.isBlank()) return@runCatching null
                 // BUG-022 防御前移：非法 tag 在检查阶段即报错，不让恶意 tag 进入任何文件操作
                 check(TAG_SAFE.matches(tag)) { "Release tag 含非法字符: $tag" }
+                // BUG-049：assets 顺序无保证——对完整 name 列表调一次 selectApkAsset
+                // （优先 -release.apk，其次首个非 sources/mapping 的 .apk），再回查对应资产；
+                // 数组缺失或无可选 apk → null（按无资产处理）
                 val asset = o.optJSONArray("assets")?.let { arr ->
-                    (0 until arr.length()).map { arr.getJSONObject(it) }
-                        .firstOrNull { it.optString("name").endsWith(".apk") }
+                    val objs = (0 until arr.length()).map { arr.getJSONObject(it) }
+                    val names = objs.map { it.optString("name") }
+                    val picked = selectApkAsset(names)
+                    objs.firstOrNull { it.optString("name") == picked }
                 } ?: return@runCatching null
                 val remote = tag.removePrefix("v")
                 if (!versionGreaterThan(remote, currentVersionName(context))) {
