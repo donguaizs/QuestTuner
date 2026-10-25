@@ -59,26 +59,34 @@ object TuningExecutor {
      * （用户显式 connect 流程专用），服务/接收器侧自愈只可用本函数（BUG-027 会话语义）。
      */
     suspend fun ensureConnected(context: Context): Boolean = withContext(Dispatchers.IO) {
-        if (connection != null) return@withContext true
+        if (connection != null) return@withContext true   // 快路径：已有连接直接返回（读竞态无害）
         val keyStore = AdbKeyStore(context)
         runCatching { keyStore.loadOrGenerate() }.onFailure {
             lastError = "密钥生成失败: ${it.message}"
             return@withContext false
         }
         val conn = AdbConnection("127.0.0.1", 5555)
-        // 略大于 socket soTimeout（30s），双保险；取消/超时/失败路径都关闭 socket
+        // BUG-051：整个流程一把锁（检查+connect+赋值原子化）。原实现两条并发连接会在
+        // 锁外互相覆盖赋值，首条实例悬挂泄漏。代价=并发第二调用方阻塞等第一条连完，
+        // 再在锁内快路径发现已有连接直接返回——行为正确且更简单。
+        // 注意：withTimeout 只包 connect（维持 35s 语义，等锁时间不计入）；withLock
+        // lambda 内不可 return@withContext，成功路径统一在锁外返回 true。
         val result = runCatching {
             adbMutex.withLock {
-                withTimeout(35_000L) {
-                    conn.connect(keyStore).getOrThrow()
+                if (connection != null) {
+                    conn.close()   // 输给了别的并发调用方：关掉自己多建的实例，返回 true（连接确实存在）
+                } else {
+                    withTimeout(35_000L) {
+                        conn.connect(keyStore).getOrThrow()
+                    }
+                    connection = conn
+                    _connectionState.value = true
+                    lastError = null
+                    lastFailureWasRefused = false
                 }
             }
         }
         if (result.isSuccess) {
-            connection = conn
-            _connectionState.value = true
-            lastError = null
-            lastFailureWasRefused = false
             true
         } else {
             val e = result.exceptionOrNull()
