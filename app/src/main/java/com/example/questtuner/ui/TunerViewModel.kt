@@ -363,6 +363,7 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveProfile(p: AppProfile) {
+        val savedRef = p   // BUG-052：捕获保存时传入的引用，供回填 lambda 比较
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 repo.save(p)
@@ -370,8 +371,9 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             }.let { ps ->
                 _state.value = _state.value.copy(
                     profiles = ps,
-                    // BUG-041：编辑模式保存完成 → 退出编辑态（remember(null) 重置回新建默认）
-                    editingProfile = null,
+                    // BUG-052：条件清——只退出"自己这次保存"的编辑态；保存 IO 期间用户
+                    // 已点开另一个编辑（editingProfile 已换引用）则保留之
+                    editingProfile = _state.value.editingProfile?.takeIf { it != savedRef },
                 )
             }
         }
@@ -405,7 +407,12 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
                 repo.delete(pkg)
                 repo.profiles()
             }.let { ps ->
-                _state.value = _state.value.copy(profiles = ps)
+                _state.value = _state.value.copy(
+                    profiles = ps,
+                    // BUG-053：删除的是当前编辑对象 → 同步退出编辑态，防止悬挂引用
+                    // 让 NewProfileCard 停留编辑态、点保存"复活"已删除的 profile
+                    editingProfile = _state.value.editingProfile?.takeIf { it?.packageName != pkg },
+                )
             }
         }
     }
