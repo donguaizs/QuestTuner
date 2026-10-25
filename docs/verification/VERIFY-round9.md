@@ -14,14 +14,14 @@
 | ② | BUG-049 selectApkAsset + checkLatest 接线 + 3 用例 | **PASS** |
 | ③-a | BUG-050 BootReceiver 条件断开 | **PASS** |
 | ③-b | BUG-051 ensureConnected 一把锁 | **PASS** |
-| ④ | BUG-052/053 编辑态回填 | **FAIL**（052 语义反转 → 旅程 3 回归；053 部分 PASS） |
+| ④ | BUG-052/053 编辑态回填 | **PASS**（返工 b8c15bd 复验改判；初验 FAIL 归档见文末复验节） |
 | ⑤ | BUG-048 测试权限清理（选项 A） | **PASS** |
 | ⑥ | BUG-054 wrapper 入库 | **PASS**（离线级；网络下载待补实机） |
 | ⑦ | R9-O4 TODO 三处同步 | **PASS** |
 | — | 独立复跑单测 | **38/38 全绿** |
 | — | Wang 偏差 ×3 | 全部属实、修正正确（见偏差节） |
 
-**结论：7 项中 6 PASS / 1 FAIL。④ 需返工（一行级修复 + 建议 CI 防线），其余可合入。** ④ FAIL 详情与修复方向见专节。
+**结论（复验后终判）：7 项 7 PASS / 0 FAIL，可合入 master。** 初验曾判 ④ FAIL（BUG-052 语义反转），lead 组织返工 b8c15bd 后复验改判，全程归档见文末【复验节】；初验 FAIL 详情与修复方向见专节（保留作 QA 痕迹）。
 
 ---
 
@@ -154,3 +154,18 @@
 1. **④ BUG-052 返工**（一行级 + 建议补旅程 3 断言；返工后本项复验只需走查 3 行 + 定向测试）
 2. 其余 6 项维持 PASS，可随 052 返工 commit 一并合入
 3. 待补实机项累积两条：wrapper 官方 https 真实下载验证（⑥）、BUG-050 条件断开真机项（已入 TODO 实机备注）
+
+---
+
+## 复验节（14:26，返工 b8c15bd 后改判 ④ PASS）
+
+- 返工对象：`fix/round-9` @ **b8c15bd**（"fix: BUG-052 返工——编辑态回填改引用比较（!== priorEdit）"，仅 TunerViewModel.kt +8/-4；053 与测试未动——lead 一线复核 + 本复验 diff 走查双重确认）
+- **diff 走查**：`val savedRef = p` → `val priorEdit = _state.value.editingProfile`（saveProfile.kt:366）；回填 `takeIf { it != savedRef }` → `takeIf { it !== priorEdit }`（:381）。与 VERIFY 初验给出的修复方向逐字吻合；注释含完整教训记录（值比较反转成因 + "David 验证 FAIL 的教训"）✅
+- **三时序断言（代码级推演，锚点=引用）**：
+  1. 旅程 3 正常保存→退出：editingProfile=R，priorEdit=R，改字段（90→120）不影响（表单新构实例 p 不参与比较）→ 完成时 `R !== R` 为假 → takeIf 清空 → **回新建模式 ✓**（BUG-041 旅程 3 恢复，且改不改字段行为一致）
+  2. 保存 IO 期间换编辑→保留：priorEdit=R，期间 editProfile(B) 置 editingProfile=S（S 与 R 不同引用）→ `S !== R` 为真 → **S 保留 ✓**（BUG-052 原始诉求维持）
+  3. null 编辑态短路无副作用：新建模式保存（editingProfile=null）→ priorEdit=null → `null?.takeIf` 短路为 null；期间用户点编辑 B → `B !== null` → **保留 ✓**
+- **定向复跑**（`--rerun-tasks` 强制执行，26 tasks executed 无缓存嫌疑）：A11yRoundTripTest **4/4** 绿（time 16.6s）、UpdateSafetyTest **7/7** 绿；BUILD SUCCESSFUL。全量 38/38 由 Wang 实跑在案（lead 指令豁免重复）
+- **053 与其余项**：b8c15bd 未触碰，初验 PASS 结论维持
+- **改判**：④ **FAIL → PASS**。总判定 **7 PASS / 0 FAIL**；VERIFY 初验对 052 无单测覆盖的"不同意"结论随之部分兑现（返工 diff 注释已沉淀教训，EditJourneyUiTest 旅程 3 提级建议保留于 TODO 挂靠，随 round-10 带走）
+- 复验人：David；复验耗时 ~8 分钟（走查 + 定向复跑 + 本节归档）
