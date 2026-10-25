@@ -50,7 +50,7 @@
 ## 收尾时环境事件：外网中断
 
 - 12:30 `git ls-remote` 正常 → 14:27 push 时 github.com:443 不可达（Connection reset → connect timeout；Test-NetConnection False；无代理配置回退因素）。与 Wang 13:50 前后 services.gradle.org 下载 0 字节同源，判定为本机外网链路间歇中断。
-- **影响与处置**：master（6e6bec8）与 fix/round-9 的推送未完成，本地状态完整无损；网络恢复后执行 `git push origin master fix/round-9` 即可，无其他收尾依赖。
+- **影响与处置**：master（6e6bec8）与 fix/round-9 的推送一度未完成；**14:32:54 链路恢复，后台重试循环一次命中，两分支已推送成功**（origin/master = a1b2b7b，含本报告与 TODO 头部修正的后续提交）。推送期间零数据损失（本地合并完整在前）。
 
 ## 遗留池（详见 docs/plans/TODO-round-next.md，Round 9 ⑦ 已同步）
 
