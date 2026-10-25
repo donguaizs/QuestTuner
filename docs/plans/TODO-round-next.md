@@ -1,5 +1,7 @@
 # TODO（round-next）
 
+> 本文件为 2026-10-25 09:00 迭代循环收尾时的最终遗留池。8 轮迭代的完整 QA 痕迹见 docs/bugs、docs/plans、docs/verification。
+
 ## 发布检查单（每次打 tag 前执行，源自 BUG-043/BUG-044 教训）
 1. `app/build.gradle.kts`：versionCode +1、versionName 按语义化递增
 2. 恒等式核对：即将打的 tag 名 == "v" + versionName（自更新比较用 versionName）
@@ -11,13 +13,17 @@
    c. 语义等价核验：`aapt2 dump badging` 两侧一致 + `apksigner verify --print-certs` 证书一致
 5. 换 release keystore 前重读 PLAN-round2 P3 的 TODO(lead)（换签 = 已装用户自更新校验失败，需迁移策略）
 
-## 遗留技术项（延后池）
-- R4-O7 adbStatus 覆盖链去重（UI 状态层重构时；round-5 034 修复后收益进一步降低）
-- R5-O1 选择器图标通道：**round-8 建议先做半步**——图标 LruCache（~30 行，滚动卡顿最可能源）；虚拟化继续延后
-- ~~R5-O2 双源标记收窄~~（**round-7 审计关闭**：round-4 对账已结构性解决双源漂移动机，再收窄零收益）
-- OVR Metrics 三常量实机校准（A7：转实机任务，已并入 BUG-REPORT-round6 附录实机总清单）
-- keystore 迁移：转 lead 产品决策项（当前 download_count 低，换签窗口成本最低；决定后按第 5 条执行）
+## 遗留技术项（收尾时最终状态）
+- **编辑三旅程 Compose UI 测试（round-8 降级项，优先级最高）**：测试代码框架已在 PLAN-round8.md（5 用例设计完整），阻塞点是 Compose+Robolectric 环境适配；重试时注意 round-8 沉淀的两条环境教训（android-all-instrumented 严禁入 testImplementation；user.home/maven.repo.local 重定向 F:\workspace\toolchain\robolectric-home）
+- **R5-O1 图标 LruCache（半步，~30 行）**：滚动卡顿最可能源；虚拟化继续延后
+- **R4-O7 adbStatus 覆盖链去重**：UI 状态层重构时（round-5 034 修复后收益进一步降低）
+- **OVR Metrics 三常量实机校准（A7）**：转实机任务，验证脚本见 PLAN-round2，清单在 BUG-REPORT-round6 附录
+- **keystore 迁移**：产品决策项（当前用户量小，换签窗口成本最低；决定后按检查单第 5 条执行）
+- ~~R5-O2 双源标记收窄~~（round-7 审计**关闭**：round-4 对账已结构性解决，再收窄零收益）
+- ~~BUG-017 应用扫描结果无 UI 入口~~（round-2 AppPickerDialog 已修）
+- 实机回归总清单（33 条，7 组分类）：BUG-REPORT-round6 附录——装到真机后按清单走一遍即可完成全部实机验证
 
-## round-8 建议清单（源自 round-7 测试盲区分析）
-- BUG-044/045/046 修复：检查单修订已落地本文档；Release notes 计数修正（42/42）+ 补 0.2.0→0.2.2 升级路径 + 向导移出 "PC grant unlocks" 层级（lead 直接执行）
-- 补两个针对性测试：编辑三旅程 Compose UI 测试（UI 状态机盲区，最高危）+ ShadowSettings a11y 往返 Robolectric（框架交互盲区）
+## 环境备忘（本项目构建/测试已知坑）
+- 构建：JAVA_HOME=F:\workspace\toolchain\jdk-extract\jdk-17.0.20.1+1，GRADLE_USER_HOME=F:\workspace\toolchain\gradle-home，TEMP/TMP 必须重定向 F:\workspace\tmp（用户 Temp 目录 ACL 问题）
+- Robolectric：user.home 与 maven.repo.local 重定向 F:\workspace\toolchain\robolectric-home（android-all jar 已离线预取在该 .m2）
+- Gradle daemon 偶发 BindException：gradle --stop 后重试
