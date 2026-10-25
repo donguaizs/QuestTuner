@@ -40,12 +40,17 @@ ui/     Jetpack Compose UI + ViewModel（MVVM）
 
 ## 构建
 
-环境要求：**JDK 17**、**Android SDK**（compileSdk 34）、**Gradle 8.7+**。
+环境要求：**JDK 17**、**Android SDK**（compileSdk 34）。
 
 ```bash
-gradle :app:assembleDebug
+.\gradlew.bat :app:assembleDebug        # Windows（Linux/macOS 用 ./gradlew）
 # 产物：app/build/outputs/apk/debug/app-debug.apk
 ```
+
+仓库已入库 Gradle wrapper（8.7，SHA-256 已固定），首次运行会自动下载 Gradle——
+需联网一次。完全离线环境可将 `gradle/wrapper/gradle-wrapper.properties` 中的
+`distributionUrl` 指向本地 `file:///` 的 `gradle-8.7-bin.zip` 副本，或退回使用
+预装的 Gradle 8.7（`gradle :app:assembleDebug`）。
 
 ## 安装到 Quest 3
 
