@@ -363,7 +363,7 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveProfile(p: AppProfile) {
-        val savedRef = p   // BUG-052：捕获保存时传入的引用，供回填 lambda 比较
+        val priorEdit = _state.value.editingProfile   // BUG-052：捕获保存发起时的编辑态引用
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 repo.save(p)
@@ -371,9 +371,13 @@ class TunerViewModel(app: Application) : AndroidViewModel(app) {
             }.let { ps ->
                 _state.value = _state.value.copy(
                     profiles = ps,
-                    // BUG-052：条件清——只退出"自己这次保存"的编辑态；保存 IO 期间用户
-                    // 已点开另一个编辑（editingProfile 已换引用）则保留之
-                    editingProfile = _state.value.editingProfile?.takeIf { it != savedRef },
+                    // BUG-052（返工）：条件清用**引用比较（!==）**且锚点是 priorEdit——
+                    // 保存完成时编辑态仍是保存发起时的那个引用（未被用户换过）→ 清空退出
+                    // （恢复 BUG-041 旅程 3"保存后退出编辑态"）；保存期间用户已点开新编辑
+                    // （引用已变）→ 保留。不能用 data class 值比较（it != priorEdit）：
+                    // doSave 从表单状态新建 AppProfile，旅程 3 改过字段时新值≠旧值，
+                    // takeIf 恒真 → 不清 → BUG-041 回归（David 验证 FAIL 的教训）。
+                    editingProfile = _state.value.editingProfile?.takeIf { it !== priorEdit },
                 )
             }
         }
