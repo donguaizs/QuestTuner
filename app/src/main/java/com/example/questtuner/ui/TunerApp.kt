@@ -30,6 +30,11 @@ import com.example.questtuner.tuner.AppProfile
 @Composable
 fun TunerApp(viewModel: TunerViewModel) {
     val state by viewModel.state.collectAsState()
+    // OPT-round10 ④：状态提升到 LazyColumn 之外——item 内 remember 随虚拟化滚动销毁会「滚走丢词」
+    var profileQuery by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    val filteredProfiles = androidx.compose.runtime.remember(state.profiles, profileQuery) {
+        filterProfiles(state.profiles, profileQuery)
+    }
     MaterialTheme {
         if (state.wizardVisible) {
             SetupWizard(state, viewModel)
@@ -44,19 +49,46 @@ fun TunerApp(viewModel: TunerViewModel) {
             item { AutomationCard(state, viewModel) }
             item { UpdateCard(state, viewModel) }
             item { Text("按应用 Profile", style = MaterialTheme.typography.titleMedium) }
-            items(state.profiles, key = { it.packageName }) { p ->
-                ProfileRow(
-                    p,
-                    connected = state.connected,
-                    onApply = { viewModel.applyProfile(p) },
-                    onEdit = { viewModel.editProfile(p) },   // R6-O2：编辑入口
-                    onDelete = { viewModel.deleteProfile(p.packageName) },
-                )
+            if (state.profiles.isNotEmpty()) {
+                item {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = profileQuery,
+                        onValueChange = { profileQuery = it },
+                        placeholder = { Text("搜索 Profile 名称或包名") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            if (state.profiles.isNotEmpty() && filteredProfiles.isEmpty()) {
+                item { Text("无匹配 Profile", style = MaterialTheme.typography.bodySmall) }
+            } else {
+                items(filteredProfiles, key = { it.packageName }) { p ->
+                    ProfileRow(
+                        p,
+                        connected = state.connected,
+                        onApply = { viewModel.applyProfile(p) },
+                        onEdit = { viewModel.editProfile(p) },   // R6-O2：编辑入口
+                        onDelete = { viewModel.deleteProfile(p.packageName) },
+                    )
+                }
             }
             item { Text("新建 Profile", style = MaterialTheme.typography.titleMedium) }
             item { NewProfileCard(state, viewModel) }
             item { LogCard(state) }
         }
+    }
+}
+
+/**
+ * OPT-round10 ④：Profile 列表过滤（纯函数可单测）——label/包名子串、大小写不敏感；
+ * 空 query 返回全量；label 为 null 时以包名兜底匹配。
+ */
+internal fun filterProfiles(profiles: List<AppProfile>, query: String): List<AppProfile> {
+    if (query.isBlank()) return profiles
+    return profiles.filter {
+        it.label?.contains(query, ignoreCase = true) == true ||
+            it.packageName.contains(query, ignoreCase = true)
     }
 }
 

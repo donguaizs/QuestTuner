@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
@@ -28,7 +29,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.graphics.drawable.toBitmap
 import com.example.questtuner.tuner.InstalledApp
 
 /** 本地应用选择器：搜索 + 图标列表，零网络。onSelect 返回包名与标签。 */
@@ -79,6 +79,9 @@ fun AppPickerDialog(
                             }
                         }
                     }
+                    // OPT-round10 ③：非空态补刷新入口（卸载残留/新装感知）——复用 onRefresh，
+                    // loadApps 内 appsLoading 防重入；不引入新缓存结构/广播/TTL（David 已否决）
+                    OutlinedButton(onClick = onRefresh, enabled = !loading) { Text("刷新应用列表") }
                 }
                 TextButton(onClick = onDismiss) { Text("取消") }
             }
@@ -88,10 +91,8 @@ fun AppPickerDialog(
 
 @Composable
 private fun AppPickerRow(app: InstalledApp, onClick: () -> Unit) {
-    // 图标按需下采样（64dp），不放大 Drawable 常驻内存问题
-    val bmp = remember(app.icon) {
-        runCatching { app.icon?.toBitmap(64, 64)?.asImageBitmap() }.getOrNull()
-    }
+    // OPT-round10 ②：icon 已是扫描期 64px Bitmap，直接转 ImageBitmap（删渲染期 toBitmap 重转换）
+    val bmp = remember(app.icon) { app.icon?.asImageBitmap() }
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.padding(8.dp),
@@ -100,6 +101,8 @@ private fun AppPickerRow(app: InstalledApp, onClick: () -> Unit) {
         ) {
             if (bmp != null) {
                 Image(bmp, contentDescription = null, modifier = Modifier.size(40.dp))
+            } else {
+                Spacer(Modifier.size(40.dp))   // ②-b：无图标保留占位，行布局不塌
             }
             Column(Modifier.weight(1f)) {
                 Text(app.label, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
