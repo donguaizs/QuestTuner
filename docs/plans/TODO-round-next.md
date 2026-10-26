@@ -16,7 +16,7 @@
 ## 遗留技术项（收尾时最终状态）
 - **编辑三旅程 Compose UI 测试（round-8 降级项，优先级最高）**：测试代码框架已在 PLAN-round8.md（5 用例设计完整），阻塞点是 Compose+Robolectric 环境适配；重试时注意 round-8 沉淀的两条环境教训（android-all-instrumented 严禁入 testImplementation；user.home/maven.repo.local 重定向 F:\workspace\toolchain\robolectric-home）（届时顺带补"保存中点编辑"旅程用例——BUG-052 的 UI 级回归）
 - **R9-O1 测试 JVM workingDir 固化**：testOptions.unitTests.all { workingDir = build/tmp/robolectric-cwd }——BUG-047 兜底根治半步；Robolectric 环境刚稳定，待编辑三旅程 UI 测试落地后再动（需先实测对 4.12.2 无副作用）
-- **R5-O1 图标 LruCache（半步，~30 行）**：滚动卡顿最可能源；虚拟化继续延后
+- ~~R5-O1 图标 LruCache（半步，~30 行）~~（round-10 **结构性解决**：改用方案 A 扫描期降采样 64px Bitmap，`InstalledApp.icon: Bitmap?`——全尺寸 Drawable 不再常驻，内存从 21~150MB 量级降至 N×16KB（150 应用≈2.4MB）；LruCache 异步编排不再需要。虚拟化维持延后）
 - **R4-O7 adbStatus 覆盖链去重**：UI 状态层重构时（round-5 034 修复后收益进一步降低）
 - **OVR Metrics 三常量实机校准（A7）**：转实机任务，验证脚本见 PLAN-round2，清单在 BUG-REPORT-round6 附录
 - **keystore 迁移**：产品决策项（当前用户量小，换签窗口成本最低；决定后按检查单第 5 条执行）
